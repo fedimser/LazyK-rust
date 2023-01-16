@@ -76,6 +76,10 @@ impl Expr {
     }
 }
 
+struct ExpressionPool {
+    e: Vec<Expr>,
+}
+
 static mut EXPRESSION_POOL: Vec<Expr> = Vec::new();
 static NULL_ID: usize = 1000000000;
 pub struct ExprRef(usize);
@@ -108,9 +112,9 @@ impl ExprRef {
     fn new(expr: Expr) -> Self {
         unsafe {
             EXPRESSION_POOL.push(expr);
-            if (EXPRESSION_POOL.len() % 1000000 == 0) {
+            /*if (EXPRESSION_POOL.len() % 1000000 == 0) {
                 println!("Expressions in pool: {}", EXPRESSION_POOL.len());
-            }
+            }*/
             return ExprRef(EXPRESSION_POOL.len() - 1);
         }
     }
