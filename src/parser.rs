@@ -18,6 +18,7 @@ pub enum Expr {
     S,
     S1(ExprRef),
     S2(ExprRef, ExprRef),
+    I,
     I1(ExprRef),
     LazyRead,
     Inc,
@@ -54,6 +55,7 @@ impl Expr {
                 arg2.print(out);
                 out.push(']');
             }
+            Expr::I => out.push('I'),
             Expr::I1(arg1) => {
                 out.push_str(".");
                 arg1.print(out);
@@ -149,7 +151,7 @@ impl Consts {
         }
         let K = ExprRef::new(Expr::K);
         let S = ExprRef::new(Expr::S);
-        let I = ExprRef::new(Expr::S2(K.clone(), K.clone()));
+        let I = ExprRef::new(Expr::I);
         let KI = ExprRef::new(Expr::K1(I.clone()));
         let SI = ExprRef::new(Expr::S1(I.clone()));
         let KS = ExprRef::new(Expr::K1(S.clone()));
@@ -318,6 +320,7 @@ impl LazyK {
             Expr::K => Expr::K1(rhs),
             Expr::K1(arg1) => Expr::I1(arg1.clone()),
             Expr::S => Expr::S1(rhs),
+            Expr::I => Expr::I1(rhs),
             Expr::S1(arg1) => Expr::S2(arg1.clone(), rhs),
             Expr::LazyRead => {
                 let next_char = match self.input.read_byte() {
