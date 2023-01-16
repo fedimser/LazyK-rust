@@ -4,7 +4,7 @@ use lazyk_rust::parser::LazyK;
 fn parse_and_run(source: &str, input: &str) -> () {
     let mut lk = LazyK::new();
     let program = lk.parse(source);
-    lk.run_string(&program, input);
+    lk.run_string(program, input);
 }
 
 fn criterion_benchmark(c: &mut Criterion) {

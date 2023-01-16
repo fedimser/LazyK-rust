@@ -11,23 +11,24 @@ use std::{
     rc::Rc,
 };
 
+type ExprId = usize;
 pub enum Expr {
-    A(ExprRef, ExprRef),
+    A(ExprId, ExprId),
     K,
-    K1(ExprRef),
+    K1(ExprId),
     S,
-    S1(ExprRef),
-    S2(ExprRef, ExprRef),
+    S1(ExprId),
+    S2(ExprId, ExprId),
     I,
-    I1(ExprRef),
-    LazyRead,
+    I1(ExprId),
+    LazyRead(),
     Inc,
     Num(usize),
     Free,
 }
 
 impl Expr {
-    fn print(&self, out: &mut String) {
+    /*fn print(&self, out: &mut String) {
         match self {
             Expr::A(arg1, arg2) => {
                 out.push('(');
@@ -60,7 +61,7 @@ impl Expr {
                 out.push_str(".");
                 arg1.print(out);
             }
-            Expr::LazyRead => out.push_str("LazyRead"),
+            Expr::LazyRead(_) => out.push_str("LazyRead"),
             Expr::Inc => out.push_str("Inc"),
             Expr::Num(num) => {
                 out.push_str(&format!("{num}"));
@@ -73,151 +74,215 @@ impl Expr {
         let mut ans = String::new();
         self.print(&mut ans);
         return ans;
-    }
+    }*/
 }
 
-struct ExpressionPool {
+pub struct ExpressionPool {
     e: Vec<Expr>,
+    church_chars: Vec<ExprId>,
+    S: ExprId,
+    K: ExprId,
+    I: ExprId,
+    KI: ExprId,
+    Inc: ExprId,
+    Zero: ExprId,
+    Iota: ExprId,
+    input: Input,
 }
 
-static mut EXPRESSION_POOL: Vec<Expr> = Vec::new();
-static NULL_ID: usize = 1000000000;
-pub struct ExprRef(usize);
+impl ExpressionPool {
+    fn new() -> Self {
+        let mut pool: Vec<Expr> = Vec::with_capacity(10000000);
+        let mut n = |expr: Expr| {
+            pool.push(expr);
+            return pool.len() - 1;
+        };
 
-impl Deref for ExprRef {
-    type Target = Expr;
+        let K = n(Expr::K);
+        let S = n(Expr::S);
+        let I = n(Expr::I);
+        let KI = n(Expr::K1(I));
+        let SI = n(Expr::S1(I));
+        let KS = n(Expr::K1(S));
+        let KK = n(Expr::K1(K));
+        let SKSK = n(Expr::S2(KS, K));
+        let SIKS = n(Expr::S2(I, KS));
+        let Iota = n(Expr::S2(SIKS, KK));
+        let Inc = n(Expr::Inc);
+        let Zero = n(Expr::Num(0));
 
-    fn deref(&self) -> &Expr {
-        assert!(self.0 != NULL_ID);
-        unsafe { &EXPRESSION_POOL[self.0] }
-    }
-}
-
-// TODO: garbage collection, or just replace with Rc<Expr>.
-impl Clone for ExprRef {
-    fn clone(&self) -> Self {
-        Self(self.0.clone())
-    }
-}
-
-impl ExprRef {
-    fn null() -> Self {
-        ExprRef(NULL_ID)
-    }
-
-    fn is_null(&self) -> bool {
-        return self.0 == NULL_ID;
-    }
-
-    fn new(expr: Expr) -> Self {
-        unsafe {
-            EXPRESSION_POOL.push(expr);
-            /*if (EXPRESSION_POOL.len() % 1000000 == 0) {
-                println!("Expressions in pool: {}", EXPRESSION_POOL.len());
-            }*/
-            return ExprRef(EXPRESSION_POOL.len() - 1);
+        let mut church_chars = vec![KI, I];
+        for i in 2..EOF_MARKER + 1 {
+            church_chars.push(n(Expr::S2(SKSK, church_chars[i - 1])));
+        }
+        Self {
+            e: pool,
+            church_chars,
+            S,
+            K,
+            I,
+            KI,
+            Inc,
+            Zero,
+            Iota,
+            input: Input::Null,
         }
     }
 
-    fn replace_with(&self, expr: Expr) {
-        assert!(self.0 != NULL_ID);
-        unsafe {
-            EXPRESSION_POOL[self.0] = expr;
+    fn new_expr(&mut self, expr: Expr) -> ExprId {
+        self.e.push(expr);
+        return self.e.len() - 1;
+    }
+
+    fn partial_eval_primitive_application(&mut self, expr_id: ExprId) {
+        match self.e[expr_id] {
+            Expr::A(lhs, rhs) => {
+                self.e[expr_id] = self.partial_eval_primitive_application_2(lhs, rhs);
+            }
+            _ => panic!("Not an application!"),
         }
     }
 
-    fn swap_arg1(&self, other_arg1: &mut ExprRef) {
-        assert!(self.0 != NULL_ID);
-        let expr: &mut Expr = unsafe { &mut EXPRESSION_POOL[self.0] };
-        match expr {
+    // TODO: pull out?
+    fn partial_eval_primitive_application_2(&mut self, lhs: ExprId, rhs: ExprId) -> Expr {
+        let rhs = self.drop_i1(rhs);
+        match &self.e[lhs] {
+            Expr::K => Expr::K1(rhs),
+            Expr::K1(arg1) => Expr::I1(*arg1),
+            Expr::S => Expr::S1(rhs),
+            Expr::I => Expr::I1(rhs),
+            Expr::S1(arg1) => Expr::S2(*arg1, rhs),
+            Expr::LazyRead() => {
+                self.apply_lazy_read(  lhs, rhs)
+            }
+            Expr::S2(arg1, arg2) => {
+                self.apply_s2(*arg1, *arg2, rhs)
+            }
+            Expr::Inc => {
+                let rhs2 = self.partial_eval(rhs);
+                match self.e[rhs2] {
+                    Expr::Num(num) => Expr::Num(num + 1),
+                    _ => panic!("Attempted to apply inc to a non-number"),
+                }
+            }
+            _ => panic!("Unreachable code."),
+        }
+    }
+
+    // lhs points to LazyRead.
+    fn apply_lazy_read(&mut self, lhs: ExprId, rhs: ExprId) -> Expr{
+        let next_char = match self.input.read_byte() {
+            Some(ch) => ch as usize,
+            None => EOF_MARKER,
+        };
+        let ch = self.church_char(next_char);
+        let x_rhs = self.new_expr(Expr::K1(ch));
+        let x = self.new_expr(Expr::S2(self.I, x_rhs));
+        let new_lazy_read = self.new_expr(Expr::LazyRead());
+        let y = self.new_expr(Expr::K1(new_lazy_read));
+        self.e[lhs] = Expr::S2(x, y);
+        return self.partial_eval_primitive_application_2(lhs, rhs); // "fall through".
+    }
+    
+    fn apply_s2(&mut self, arg1: ExprId, arg2:ExprId, rhs:ExprId) -> Expr{
+        let new_lhs = self.partial_apply(arg1, rhs);
+        Expr::A(new_lhs, self.partial_apply(arg2, rhs))
+    }
+
+    fn partial_apply(&mut self, lhs: ExprId, rhs: ExprId) -> ExprId {
+        self.new_expr(Expr::A(lhs, rhs))
+    }
+
+    // TODO: skip extra clones.
+    fn drop_i1(&self, expr: ExprId) -> ExprId {
+        let mut cur = expr;
+        loop {
+            if let Expr::I1(arg1) = self.e[cur] {
+                cur = arg1;
+            } else {
+                return cur;
+            }
+        }
+    }
+
+    fn partial_eval(&mut self, mut cur: ExprId) -> ExprId {
+        let mut prev: ExprId = 0;
+        loop {
+            cur = self.drop_i1(cur);
+            while let Expr::A(cur_arg1, _) = self.e[cur] {
+                self.swap_arg1(cur, &mut prev);
+                let next = self.drop_i1(prev);
+                prev = cur;
+                cur = next;
+            }
+            if prev == 0 {
+                return cur;
+            }
+
+            let mut next = cur;
+            cur = prev;
+            self.swap_arg1(cur, &mut next);
+            prev = next;
+
+            self.partial_eval_primitive_application(cur);
+        }
+    }
+
+    // TODO: this can be inlined.
+    fn swap_arg1(&mut self, app_id: ExprId, other_arg1: &mut ExprId) {
+        match &mut self.e[app_id] {
             Expr::A(arg1, _) => std::mem::swap(arg1, other_arg1),
             _ => panic!("Unexpected expression type."),
         }
     }
-}
 
-///////////////////////////////////////////////////////////////////////////////
-
-struct Consts {
-    church_chars: Vec<ExprRef>,
-    S: ExprRef,
-    K: ExprRef,
-    Inc: ExprRef,
-    Zero: ExprRef,
-    Iota: ExprRef,
-}
-
-impl Consts {
-    fn new() -> Self {
-        unsafe {
-            EXPRESSION_POOL.clear();
-            EXPRESSION_POOL.reserve(10000000);
-        }
-        let K = ExprRef::new(Expr::K);
-        let S = ExprRef::new(Expr::S);
-        let I = ExprRef::new(Expr::I);
-        let KI = ExprRef::new(Expr::K1(I.clone()));
-        let SI = ExprRef::new(Expr::S1(I.clone()));
-        let KS = ExprRef::new(Expr::K1(S.clone()));
-        let KK = ExprRef::new(Expr::K1(K.clone()));
-        let SKSK = ExprRef::new(Expr::S2(KS.clone(), K.clone()));
-        let SIKS = ExprRef::new(Expr::S2(I.clone(), KS.clone()));
-        let Iota = ExprRef::new(Expr::S2(SIKS, KK));
-        let Inc = ExprRef::new(Expr::Inc);
-        let Zero = ExprRef::new(Expr::Num(0));
-
-        let mut church_chars = vec![KI, I];
-        for i in 2..EOF_MARKER + 1 {
-            church_chars.push(ExprRef::new(Expr::S2(
-                SKSK.clone(),
-                church_chars[i - 1].clone(),
-            )));
-        }
-        Self {
-            church_chars,
-            S,
-            K,
-            Inc,
-            Zero,
-            Iota,
+    fn church2int(&mut self, church: ExprId) -> Result<usize> {
+        let inc = self.partial_apply(church, self.Inc);
+        let e = self.partial_apply(inc, self.Zero);
+        let result_id = self.partial_eval(e);
+        match self.e[result_id] {
+            Expr::Num(num) => Ok(num),
+            _ => Err(Error::ResultIsNotChurchNumeral),
         }
     }
 
-    fn church_char(&self, mut idx: usize) -> ExprRef {
+    fn car(&mut self, list: ExprId) -> ExprId {
+        return self.partial_apply(list, self.K);
+    }
+
+    fn cdr(&mut self, list: ExprId) -> ExprId {
+        return self.partial_apply(list, self.KI);
+    }
+
+    fn church_char(&self, mut idx: usize) -> ExprId {
         if idx > EOF_MARKER {
             idx = EOF_MARKER;
         }
-        self.church_chars[idx].clone()
+        self.church_chars[idx]
     }
 
-    fn I(&self) -> ExprRef {
-        self.church_chars[1].clone()
-    }
-
-    fn KI(&self) -> ExprRef {
-        self.church_chars[0].clone()
-    }
-
-    fn K(&self) -> ExprRef {
-        self.K.clone()
-    }
-
-    fn S(&self) -> ExprRef {
-        self.S.clone()
-    }
-
-    fn Inc(&self) -> ExprRef {
-        self.Inc.clone()
-    }
-
-    fn Zero(&self) -> ExprRef {
-        self.Zero.clone()
-    }
-
-    fn Iota(&self) -> ExprRef {
-        self.Iota.clone()
+    fn run(&mut self, expr_id: ExprId, input: Input, output: &mut Output) -> Result<usize> {
+        self.input = input;
+        let lr = self.new_expr(Expr::LazyRead());
+        let mut e = self.partial_apply(expr_id, lr);
+        loop {
+            let head = self.car(e);
+            let ch = self.church2int(head)?;
+            if ch >= EOF_MARKER {
+                return Ok(ch - EOF_MARKER);
+            }
+            output.write_char(ch as u8)?;
+            e = self.cdr(e);
+        }
     }
 }
+
+pub struct ExprRef {
+    pool: &'static ExpressionPool,
+    id: ExprId,
+}
+
+///////////////////////////////////////////////////////////////////////////////
 
 ///////////////////////////////////////////////////////////////////////////////
 /// I/O
@@ -280,7 +345,9 @@ impl Output {
                 buf.push(c);
                 Ok(())
             }
-            Self::Writer(w) => w.write_u8(c).map_err(|_| Error::IoError),
+            Self::Writer(w) => {
+               w.write_u8(c).map_err(|_| Error::IoError)
+            }
         }
     }
 }
@@ -292,192 +359,25 @@ impl Default for Output {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-/// Lazy-K interpreter.
-pub struct LazyK {
-    consts: Consts,
-    input: Input,
-    output: Output,
+pub struct Parser {
+    pool: &'static mut ExpressionPool,
 }
 
-impl LazyK {
-    pub fn new() -> Self {
-        Self {
-            consts: Consts::new(),
-            input: Input::Null,
-            output: Output::Null,
-        }
-    }
+impl Parser {
+    //fn compose(f: ExprRef, g: ExprRef) -> ExprRef {
+    //    ExprRef::new(Expr::S2(ExprRef::new(Expr::K1(f)), g))
+    //}
 
-    fn partial_eval_primitive_application(&mut self, expr: &ExprRef) {
-        match expr.deref() {
-            Expr::A(lhs, rhs) => {
-                expr.replace_with(self.partial_eval_primitive_application_2(lhs, rhs));
-            }
-            _ => panic!("Not an application!"),
-        }
-    }
-
-    // TODO: pull out?
-    fn partial_eval_primitive_application_2(&mut self, lhs: &ExprRef, rhs: &ExprRef) -> Expr {
-        let rhs = Self::drop_i1(rhs.clone());
-        match lhs.deref() {
-            Expr::K => Expr::K1(rhs),
-            Expr::K1(arg1) => Expr::I1(arg1.clone()),
-            Expr::S => Expr::S1(rhs),
-            Expr::I => Expr::I1(rhs),
-            Expr::S1(arg1) => Expr::S2(arg1.clone(), rhs),
-            Expr::LazyRead => {
-                let next_char = match self.input.read_byte() {
-                    Some(ch) => ch as usize,
-                    None => EOF_MARKER,
-                };
-                let ch = self.consts.church_char(next_char);
-                let x = ExprRef::new(Expr::S2(self.consts.I(), ExprRef::new(Expr::K1(ch))));
-                let y = ExprRef::new(Expr::K1(ExprRef::new(Expr::LazyRead)));
-                lhs.replace_with(Expr::S2(x, y));
-                return self.partial_eval_primitive_application_2(lhs, &rhs); // "fall through".
-            }
-            Expr::S2(arg1, arg2) => Expr::A(
-                Self::partial_apply(arg1.clone(), rhs.clone()),
-                Self::partial_apply(arg2.clone(), rhs),
-            ),
-            Expr::Inc => {
-                let rhs2 = self.partial_eval(rhs);
-                match rhs2.deref() {
-                    Expr::Num(num) => Expr::Num(num + 1),
-                    _ => panic!("Attempted to apply inc to a non-number"),
-                }
-            }
-            _ => panic!("Unreachable code."),
-        }
-    }
-
-    fn partial_apply(lhs: ExprRef, rhs: ExprRef) -> ExprRef {
-        ExprRef::new(Expr::A(lhs, rhs))
-    }
-
-    // TODO: skip extra clones.
-    fn drop_i1(expr: ExprRef) -> ExprRef {
-        let mut cur = expr;
-        loop {
-            if let Expr::I1(arg1) = cur.deref() {
-                cur = arg1.clone();
-            } else {
-                return cur;
-            }
-        }
-    }
-
-    fn partial_eval(&mut self, mut cur: ExprRef) -> ExprRef {
-        let mut prev = ExprRef::null();
-        loop {
-            cur = Self::drop_i1(cur);
-            while let Expr::A(cur_arg1, _) = cur.deref() {
-                cur.swap_arg1(&mut prev);
-                let next = Self::drop_i1(prev);
-                prev = cur;
-                cur = next;
-            }
-            if prev.is_null() {
-                return cur;
-            }
-
-            let mut next = cur;
-            cur = prev;
-            cur.swap_arg1(&mut next);
-            prev = next;
-
-            self.partial_eval_primitive_application(&cur);
-        }
-    }
-
-    fn church2int(&mut self, church: ExprRef) -> Result<usize> {
-        let e = Self::partial_apply(
-            Self::partial_apply(church, self.consts.Inc()),
-            self.consts.Zero(),
-        );
-        let result = self.partial_eval(e);
-        match result.deref() {
-            Expr::Num(num) => Ok(*num),
-            _ => Err(Error::ResultIsNotChurchNumeral),
-        }
-    }
-
-    fn car(&self, list: ExprRef) -> ExprRef {
-        return Self::partial_apply(list, self.consts.K());
-    }
-
-    fn cdr(&self, list: ExprRef) -> ExprRef {
-        return Self::partial_apply(list, self.consts.KI());
-    }
-
-    fn run(&mut self, program: ExprRef) -> Result<()> {
-        let mut e = Self::partial_apply(program, ExprRef::new(Expr::LazyRead));
-        loop {
-            let ch = self.church2int(self.car(e.clone()))?;
-            if ch >= EOF_MARKER {
-                return Ok(());
-            }
-            self.output.write_char(ch as u8)?;
-            e = self.cdr(e);
-        }
-    }
-
-    pub fn run_vec(
-        &mut self,
-        program: &ExprRef,
-        input: Vec<u8>,
-        max_output: Option<usize>,
-    ) -> Vec<u8> {
-        self.input = Input::Reader(Box::new(Cursor::new(input)));
-        self.output = Output::Buffer(Vec::new(), max_output);
-
-        self.run(program.clone());
-
-        self.input = Input::Null;
-        match take(&mut self.output) {
-            Output::Buffer(result, _) => result,
-            _ => panic!("TODO"),
-        }
-    }
-
-    pub fn run_string_limited(
-        &mut self,
-        program: &ExprRef,
-        input: &str,
-        max_output: usize,
-    ) -> String {
-        let result = self.run_vec(program, input.as_bytes().to_owned(), Some(max_output));
-        String::from_utf8_lossy(&result).to_string()
-    }
-
-    pub fn run_string(&mut self, program: &ExprRef, input: &str) -> String {
-        let result = self.run_vec(program, input.as_bytes().to_owned(), None);
-        String::from_utf8_lossy(&result).to_string()
-    }
-
-    pub fn run_console(&mut self, program: ExprRef) {
-        self.input = Input::Reader(Box::new(stdin().lock()));
-        self.output = Output::Writer(Box::new(stdout().lock()));
-
-        self.run(program);
-
-        self.input = Input::Null;
-        self.output = Output::Null;
-    }
-
-    fn compose(f: ExprRef, g: ExprRef) -> ExprRef {
-        ExprRef::new(Expr::S2(ExprRef::new(Expr::K1(f)), g))
-    }
-
-    fn parse_jot(&self, source: &mut &[u8]) -> ExprRef {
-        let mut e = self.consts.I();
+    fn parse_jot(source: &mut &[u8], pool: &mut ExpressionPool) -> ExprId {
+        let mut e = pool.I;
         let mut i = 0;
         while i != source.len() {
             if source[i] == ('0' as u8) {
-                e = Self::partial_apply(Self::partial_apply(e, self.consts.S()), self.consts.K());
+                let lhs = pool.partial_apply(e, pool.S);
+                e = pool.partial_apply(lhs, pool.K);
             } else if source[i] == ('1' as u8) {
-                e = Self::partial_apply(self.consts.S(), Self::partial_apply(self.consts.K(), e));
+                let rhs = pool.partial_apply(pool.K, e);
+                e = pool.partial_apply(pool.S, rhs);
             }
             i += 1;
         }
@@ -508,49 +408,53 @@ impl LazyK {
         *source = &source[source.len()..];
     }
 
-    fn parse_expr(&self, source: &mut &[u8], i_is_iota: bool) -> ExprRef {
+    fn parse_expr(source: &mut &[u8], i_is_iota: bool, pool: &mut ExpressionPool) -> ExprId {
         Self::skip_whitespace_and_comments(source);
         if source.is_empty() {
             panic!("Unexpected end of source.")
         }
         let ch = source[0] as char;
         if ch == '0' || ch == '1' {
-            return self.parse_jot(source);
+            return Self::parse_jot(source, pool);
         }
 
         *source = &source[1..];
         match ch {
             '`' | '*' => {
-                let p = self.parse_expr(source, ch == '*');
-                let q = self.parse_expr(source, ch == '*');
-                Self::partial_apply(p, q)
+                let p = Self::parse_expr(source, ch == '*', pool);
+                let q = Self::parse_expr(source, ch == '*', pool);
+                pool.partial_apply(p, q)
             }
-            '(' => self.parse_manual_close(source, true),
+            '(' => Self::parse_manual_close(source, true, pool),
             ')' => panic!("Mismatched close-parenthesis!"),
-            'k' | 'K' => self.consts.K(),
-            's' | 'S' => self.consts.S(),
+            'k' | 'K' => pool.K,
+            's' | 'S' => pool.S,
             'i' => {
                 if (i_is_iota) {
-                    self.consts.Iota()
+                    pool.Iota
                 } else {
-                    self.consts.I()
+                    pool.I
                 }
             }
-            'I' => self.consts.I(),
+            'I' => pool.I,
             _ => panic!("Invalid character: [{}]", ch),
         }
     }
 
-    fn parse_manual_close(&self, source: &mut &[u8], expected_closing_paren: bool) -> ExprRef {
-        let mut e: Option<ExprRef> = None;
+    fn parse_manual_close(
+        source: &mut &[u8],
+        expected_closing_paren: bool,
+        pool: &mut ExpressionPool,
+    ) -> ExprId {
+        let mut e: Option<ExprId> = None;
         loop {
             Self::skip_whitespace_and_comments(source);
             if source.is_empty() || source[0] == (')' as u8) {
                 break;
             }
-            let e2 = self.parse_expr(source, false);
+            let e2 = Self::parse_expr(source, false, pool);
             e = match e {
-                Some(e) => Some(Self::partial_apply(e, e2)),
+                Some(e) => Some(pool.partial_apply(e, e2)),
                 None => Some(e2),
             }
         }
@@ -562,21 +466,75 @@ impl LazyK {
         }
         match e {
             Some(e) => e,
-            None => self.consts.I(),
+            None => pool.I,
         }
     }
 
-    pub fn parse(&mut self, source: &str) -> ExprRef {
+    pub fn parse(source: &str, pool: &mut ExpressionPool) -> ExprId {
         let mut b = source.as_bytes();
-        self.parse_manual_close(&mut b, false)
+        Self::parse_manual_close(&mut b, false, pool)
     }
 }
 
-#[derive(PartialEq)]
-enum Token {
-    Char(char),
-    JotExpr(String),
-    Eof,
+/// Lazy-K interpreter.
+pub struct LazyK {
+    pool: ExpressionPool,
+    input: Input,
+    output: Output,
+}
+
+impl LazyK {
+    pub fn new() -> Self {
+        let mut pool = ExpressionPool::new();
+        Self {
+            pool: pool,
+            input: Input::Null,
+            output: Output::Null,
+        }
+    }
+
+    pub fn run_vec(
+        &mut self,
+        program: ExprId,
+        input: Vec<u8>,
+        max_output: Option<usize>,
+    ) -> Vec<u8> {
+        let input = Input::Reader(Box::new(Cursor::new(input)));
+        let mut output = Output::Buffer(Vec::new(), max_output);
+
+        self.pool.run(program, input, &mut output);
+
+        match output {
+            Output::Buffer(result, _) => result,
+            _ => panic!("TODO"),
+        }
+    }
+
+    pub fn run_string_limited(
+        &mut self,
+        program: ExprId,
+        input: &str,
+        max_output: usize,
+    ) -> String {
+        let result = self.run_vec(program, input.as_bytes().to_owned(), Some(max_output));
+        String::from_utf8_lossy(&result).to_string()
+    }
+
+    pub fn run_string(&mut self, program: ExprId, input: &str) -> String {
+        let result = self.run_vec(program, input.as_bytes().to_owned(), None);
+        String::from_utf8_lossy(&result).to_string()
+    }
+
+    pub fn run_console(&mut self, program: ExprId) {
+        let input = Input::Reader(Box::new(stdin().lock()));
+        let mut output = Output::Writer(Box::new(stdout().lock()));
+
+        self.pool.run(program, input, &mut output);
+    }
+
+    pub fn parse(&mut self, source: &str) -> ExprId {
+        Parser::parse(source, &mut self.pool)
+    }
 }
 
 // Right now memory is used undafely, so tests don't work in parallel.
@@ -588,19 +546,19 @@ mod tests {
     fn test_church2int() {
         let mut lk = LazyK::new();
         for i in 0..5 {
-            assert_eq!(lk.church2int(lk.consts.church_char(i)).unwrap(), i);
+            assert_eq!(lk.pool.church2int(lk.pool.church_char(i)).unwrap(), i);
         }
     }
 
     #[test]
     fn test_identity() {
         let mut lk = LazyK::new();
-        let program = lk.consts.I();
-        assert_eq!(lk.run_string(&program, ""), "");
-        assert_eq!(lk.run_string(&program, "a"), "a");
-        assert_eq!(lk.run_string(&program, "ab"), "ab");
-        assert_eq!(lk.run_string(&program, "abc"), "abc");
-        assert_eq!(lk.run_string(&program, "abcd"), "abcd");
+        let program = lk.pool.I;
+        assert_eq!(lk.run_string(program, ""), "");
+        assert_eq!(lk.run_string(program, "a"), "a");
+        assert_eq!(lk.run_string(program, "ab"), "ab");
+        assert_eq!(lk.run_string(program, "abc"), "abc");
+        assert_eq!(lk.run_string(program, "abcd"), "abcd");
     }
 
     #[test]
@@ -608,7 +566,7 @@ mod tests {
         let mut source = include_str!("../examples/hello_world.lazy");
         let mut lk = LazyK::new();
         let program = lk.parse(source);
-        let result = lk.run_string(&program, "");
+        let result = lk.run_string(program, "");
         assert_eq!(result, "Hello, world!\n");
     }
 
@@ -618,12 +576,12 @@ mod tests {
         let mut lk = LazyK::new();
         let program = lk.parse(source);
 
-        assert_eq!(lk.run_string(&program, "2+2"), "4\n");
-        assert_eq!(lk.run_string(&program, "3*4"), "12\n");
-        assert_eq!(lk.run_string(&program, "2+3*4"), "14\n");
-        assert_eq!(lk.run_string(&program, "(2+3)*4"), "20\n");
+        assert_eq!(lk.run_string(program, "2+2"), "4\n");
+        assert_eq!(lk.run_string(program, "3*4"), "12\n");
+        assert_eq!(lk.run_string(program, "2+3*4"), "14\n");
+        assert_eq!(lk.run_string(program, "(2+3)*4"), "20\n");
         assert_eq!(
-            lk.run_string(&program, "1000*1000*1000*1000*1000*1000"),
+            lk.run_string(program, "1000*1000*1000*1000*1000*1000"),
             "1000000000000000000\n"
         );
     }
@@ -635,12 +593,12 @@ mod tests {
         let mut lk = LazyK::new();
         let program = lk.parse(source);
 
-        assert_eq!(lk.run_string(&program, "a"), "a");
-        assert_eq!(lk.run_string(&program, "ab"), "ba");
-        assert_eq!(lk.run_string(&program, "aba"), "aba");
-        assert_eq!(lk.run_string(&program, ""), "");
-        assert_eq!(lk.run_string(&program, "stressed"), "desserts");
-        assert_eq!(lk.run_string(&program, "Hello, world!"), "!dlrow ,olleH");
+        assert_eq!(lk.run_string(program, "a"), "a");
+        assert_eq!(lk.run_string(program, "ab"), "ba");
+        assert_eq!(lk.run_string(program, "aba"), "aba");
+        assert_eq!(lk.run_string(program, ""), "");
+        assert_eq!(lk.run_string(program, "stressed"), "desserts");
+        assert_eq!(lk.run_string(program, "Hello, world!"), "!dlrow ,olleH");
     }
 
     #[test]
@@ -648,7 +606,7 @@ mod tests {
         let source = include_str!("../examples/quine.lazy");
         let mut lk = LazyK::new();
         let program = lk.parse(source);
-        assert_eq!(lk.run_string(&program, "a"), source);
+        assert_eq!(lk.run_string(program, "a"), source);
     }
 
     #[test]
@@ -657,7 +615,7 @@ mod tests {
         let mut lk = LazyK::new();
         let program = lk.parse(source);
         assert_eq!(
-            lk.run_string_limited(&program, "", 70),
+            lk.run_string_limited(program, "", 70),
             "2 3 5 7 11 13 17 19 23 29 31 37 41 43 47 53 59 61 67 71 73 79 83 89 97"
         );
     }
@@ -668,7 +626,7 @@ mod tests {
         let mut lk = LazyK::new();
         let program = lk.parse(source);
         assert_eq!(
-            lk.run_string_limited(&program, "", 20),
+            lk.run_string_limited(program, "", 20),
             "ABABABABABABABABABAB"
         );
     }
