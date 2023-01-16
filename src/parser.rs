@@ -216,6 +216,15 @@ impl Consts {
 ///////////////////////////////////////////////////////////////////////////////
 /// I/O
 
+#[derive(Debug)]
+pub enum Error {
+    ParseError,
+    ResultIsNotChurchNumeral, //"Runtime error: invalid output format (result was not a number)"
+    IoError,
+    BufferLimitExceeded,
+}
+pub type Result<T> = std::result::Result<T, Error>;
+
 static EOF_MARKER: usize = 256;
 static EOF_CHAR: char = '\x05';
 
@@ -246,16 +255,26 @@ impl Input {
 
 pub enum Output {
     Null,
-    Buffer(Vec<u8>),
+    Buffer(Vec<u8>, Option<usize>),
     Writer(Box<dyn Write + 'static>),
 }
 impl Output {
     // TODO: return std::io::Result<()>.
-    fn write_char(&mut self, c: u8) {
+    fn write_char(&mut self, c: u8) -> Result<()> {
         match self {
-            Self::Null => {}
-            Self::Buffer(b) => b.push(c),
-            Self::Writer(w) => w.write_u8(c).expect("TODO"),
+            Self::Null => Err(Error::IoError),
+            Self::Buffer(buf, None) => {
+                buf.push(c);
+                Ok(())
+            }
+            Self::Buffer(buf, Some(limit)) => {
+                if buf.len() >= *limit {
+                    return Err(Error::BufferLimitExceeded);
+                }
+                buf.push(c);
+                Ok(())
+            }
+            Self::Writer(w) => w.write_u8(c).map_err(|_| Error::IoError),
         }
     }
 }
@@ -365,15 +384,15 @@ impl LazyK {
         }
     }
 
-    fn church2int(&mut self, church: ExprRef) -> usize {
+    fn church2int(&mut self, church: ExprRef) -> Result<usize> {
         let e = Self::partial_apply(
             Self::partial_apply(church, self.consts.Inc()),
             self.consts.Zero(),
         );
         let result = self.partial_eval(e);
         match result.deref() {
-            Expr::Num(num) => *num,
-            _ => panic!("Runtime error: invalid output format (result was not a number)"),
+            Expr::Num(num) => Ok(*num),
+            _ => Err(Error::ResultIsNotChurchNumeral),
         }
     }
 
@@ -385,34 +404,48 @@ impl LazyK {
         return Self::partial_apply(list, self.consts.KI());
     }
 
-    fn run(&mut self, program: ExprRef) -> usize {
+    fn run(&mut self, program: ExprRef) -> Result<()> {
         let mut e = Self::partial_apply(program, ExprRef::new(Expr::LazyRead));
         loop {
-            let ch = self.church2int(self.car(e.clone()));
+            let ch = self.church2int(self.car(e.clone()))?;
             if ch >= EOF_MARKER {
-                let l = unsafe { EXPRESSION_POOL.len() };
-                return ch - EOF_MARKER;
+                return Ok(());
             }
-            self.output.write_char(ch as u8);
+            self.output.write_char(ch as u8)?;
             e = self.cdr(e);
         }
     }
 
-    pub fn run_vec(&mut self, program: &ExprRef, input: Vec<u8>) -> Vec<u8> {
+    pub fn run_vec(
+        &mut self,
+        program: &ExprRef,
+        input: Vec<u8>,
+        max_output: Option<usize>,
+    ) -> Vec<u8> {
         self.input = Input::Reader(Box::new(Cursor::new(input)));
-        self.output = Output::Buffer(Vec::new());
+        self.output = Output::Buffer(Vec::new(), max_output);
 
         self.run(program.clone());
 
         self.input = Input::Null;
         match take(&mut self.output) {
-            Output::Buffer(result) => result,
+            Output::Buffer(result, _) => result,
             _ => panic!("TODO"),
         }
     }
 
+    pub fn run_string_limited(
+        &mut self,
+        program: &ExprRef,
+        input: &str,
+        max_output: usize,
+    ) -> String {
+        let result = self.run_vec(program, input.as_bytes().to_owned(), Some(max_output));
+        String::from_utf8_lossy(&result).to_string()
+    }
+
     pub fn run_string(&mut self, program: &ExprRef, input: &str) -> String {
-        let result = self.run_vec(program, input.as_bytes().to_owned());
+        let result = self.run_vec(program, input.as_bytes().to_owned(), None);
         String::from_utf8_lossy(&result).to_string()
     }
 
@@ -548,7 +581,7 @@ mod tests {
     fn test_church2int() {
         let mut lk = LazyK::new();
         for i in 0..5 {
-            assert_eq!(lk.church2int(lk.consts.church_char(i)), i);
+            assert_eq!(lk.church2int(lk.consts.church_char(i)).unwrap(), i);
         }
     }
 
@@ -609,5 +642,27 @@ mod tests {
         let mut lk = LazyK::new();
         let program = lk.parse(source);
         assert_eq!(lk.run_string(&program, "a"), source);
+    }
+
+    #[test]
+    fn test_primes() {
+        let source = include_str!("../examples/primes.lazy");
+        let mut lk = LazyK::new();
+        let program = lk.parse(source);
+        assert_eq!(
+            lk.run_string_limited(&program, "", 70),
+            "2 3 5 7 11 13 17 19 23 29 31 37 41 43 47 53 59 61 67 71 73 79 83 89 97"
+        );
+    }
+
+    #[test]
+    fn test_ab() {
+        let source = include_str!("../examples/ab.lazy");
+        let mut lk = LazyK::new();
+        let program = lk.parse(source);
+        assert_eq!(
+            lk.run_string_limited(&program, "", 20),
+            "ABABABABABABABABABAB"
+        );
     }
 }
