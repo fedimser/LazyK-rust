@@ -1,3 +1,3 @@
 pub mod parser;
+use parser::{LazyKProgram, Parser, ExpressionPool};
 
-pub use parser::LazyK;

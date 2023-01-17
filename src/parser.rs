@@ -11,7 +11,7 @@ use std::{
     rc::Rc,
 };
 
-type ExprId = usize;
+pub type ExprId = usize;
 pub enum Expr {
     A(ExprId, ExprId),
     K,
@@ -25,56 +25,6 @@ pub enum Expr {
     Inc,
     Num(usize),
     Free,
-}
-
-impl Expr {
-    /*fn print(&self, out: &mut String) {
-        match self {
-            Expr::A(arg1, arg2) => {
-                out.push('(');
-                arg1.deref().print(out);
-                out.push(' ');
-                arg2.deref().print(out);
-                out.push(')');
-            }
-            Expr::K => out.push('K'),
-            Expr::K1(arg1) => {
-                out.push_str("[K ");
-                arg1.print(out);
-                out.push(']');
-            }
-            Expr::S => out.push('S'),
-            Expr::S1(arg1) => {
-                out.push_str("[S ");
-                arg1.print(out);
-                out.push(']');
-            }
-            Expr::S2(arg1, arg2) => {
-                out.push_str("[S ");
-                arg1.print(out);
-                out.push(' ');
-                arg2.print(out);
-                out.push(']');
-            }
-            Expr::I => out.push('I'),
-            Expr::I1(arg1) => {
-                out.push_str(".");
-                arg1.print(out);
-            }
-            Expr::LazyRead(_) => out.push_str("LazyRead"),
-            Expr::Inc => out.push_str("Inc"),
-            Expr::Num(num) => {
-                out.push_str(&format!("{num}"));
-            }
-            Expr::Free => out.push_str("?"), // TODO: remove?
-        }
-    }
-
-    fn debug_string(&self) -> String {
-        let mut ans = String::new();
-        self.print(&mut ans);
-        return ans;
-    }*/
 }
 
 pub struct ExpressionPool {
@@ -98,7 +48,7 @@ static GC_LIMIT: usize = 1000000;
 static PREAMBLE_LENGTH: usize = 270;
 
 impl ExpressionPool {
-    fn new() -> Self {
+    pub fn new() -> Self {
         let mut pool: Vec<Expr> = Vec::with_capacity(GC_LIMIT);
         pool.push(Expr::Free);
         let mut n = |expr: Expr| {
@@ -151,10 +101,9 @@ impl ExpressionPool {
 
     // Frees all expressions not reachable from expr_id.
     fn garbage_collect(&mut self, expr_id: ExprId) {
-        if (self.e.len() < GC_LIMIT || self.free_ids.len() >0 ) {
+        if (self.e.len() < GC_LIMIT || self.free_ids.len() > 0) {
             return;
         }
-        //println!("Before garbage collect e={}, free={}", self.e.len(), self.free_ids.len());
 
         let n = self.e.len();
 
@@ -188,7 +137,6 @@ impl ExpressionPool {
                 }
             }
         }
-        //println!("After garbage collect e={}, free={}", self.e.len(), self.free_ids.len());
     }
 
     fn partial_eval_primitive_application(&mut self, expr_id: ExprId) {
@@ -289,7 +237,7 @@ impl ExpressionPool {
         }
     }
 
-    fn church2int(&mut self, church: ExprId) -> Result<usize> {
+    pub fn church2int(&mut self, church: ExprId) -> Result<usize> {
         let inc = self.partial_apply(church, self.Inc);
         let e = self.partial_apply(inc, self.Zero);
         let result_id = self.partial_eval(e);
@@ -307,14 +255,14 @@ impl ExpressionPool {
         return self.partial_apply(list, self.KI);
     }
 
-    fn church_char(&self, mut idx: usize) -> ExprId {
+    pub fn church_char(&self, mut idx: usize) -> ExprId {
         if idx > EOF_MARKER {
             idx = EOF_MARKER;
         }
         self.church_chars[idx]
     }
 
-    fn run(&mut self, expr_id: ExprId, input: Input, output: &mut Output) -> Result<usize> {
+    pub fn run(&mut self, expr_id: ExprId, input: Input, output: &mut Output) -> Result<usize> {
         self.input = input;
         let lr = self.new_expr(Expr::LazyRead());
         let mut e = self.partial_apply(expr_id, lr);
@@ -327,17 +275,12 @@ impl ExpressionPool {
             }
             output.write_char(ch as u8)?;
             e = self.cdr(e);
-            output_size+=1;
+            output_size += 1;
             if (output_size % 100 == 0) {
                 self.garbage_collect(e);
             }
         }
     }
-}
-
-pub struct ExprRef {
-    pool: &'static ExpressionPool,
-    id: ExprId,
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -415,15 +358,9 @@ impl Default for Output {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-pub struct Parser {
-    pool: &'static mut ExpressionPool,
-}
+pub struct Parser {}
 
 impl Parser {
-    //fn compose(f: ExprRef, g: ExprRef) -> ExprRef {
-    //    ExprRef::new(Expr::S2(ExprRef::new(Expr::K1(f)), g))
-    //}
-
     fn parse_jot(source: &mut &[u8], pool: &mut ExpressionPool) -> ExprId {
         let mut e = pool.I;
         let mut i = 0;
@@ -532,33 +469,23 @@ impl Parser {
     }
 }
 
-/// Lazy-K interpreter.
-pub struct LazyK {
+pub struct LazyKProgram {
     pool: ExpressionPool,
-    input: Input,
-    output: Output,
+    root_id: ExprId,
 }
 
-impl LazyK {
-    pub fn new() -> Self {
+impl LazyKProgram {
+    pub fn compile(source: &str) -> Result<Self> {
         let mut pool = ExpressionPool::new();
-        Self {
-            pool: pool,
-            input: Input::Null,
-            output: Output::Null,
-        }
+        let root_id = Parser::parse(source, &mut pool);
+        Ok(Self { pool, root_id })
     }
 
-    pub fn run_vec(
-        &mut self,
-        program: ExprId,
-        input: Vec<u8>,
-        max_output: Option<usize>,
-    ) -> Vec<u8> {
+    fn run_vec(&mut self, input: Vec<u8>, max_output: Option<usize>) -> Vec<u8> {
         let input = Input::Reader(Box::new(Cursor::new(input)));
         let mut output = Output::Buffer(Vec::new(), max_output);
 
-        self.pool.run(program, input, &mut output);
+        self.pool.run(self.root_id, input, &mut output);
 
         match output {
             Output::Buffer(result, _) => result,
@@ -566,125 +493,20 @@ impl LazyK {
         }
     }
 
-    pub fn run_string_limited(
-        &mut self,
-        program: ExprId,
-        input: &str,
-        max_output: usize,
-    ) -> String {
-        let result = self.run_vec(program, input.as_bytes().to_owned(), Some(max_output));
+    pub fn run_string_limited(&mut self, input: &str, max_output: usize) -> String {
+        let result = self.run_vec(input.as_bytes().to_owned(), Some(max_output));
         String::from_utf8_lossy(&result).to_string()
     }
 
-    pub fn run_string(&mut self, program: ExprId, input: &str) -> String {
-        let result = self.run_vec(program, input.as_bytes().to_owned(), None);
+    pub fn run_string(&mut self, input: &str) -> String {
+        let result = self.run_vec(input.as_bytes().to_owned(), None);
         String::from_utf8_lossy(&result).to_string()
     }
 
-    pub fn run_console(&mut self, program: ExprId) {
+    pub fn run_console(&mut self) -> Result<usize> {
+        let mut runner = ExpressionPool::new();
         let input = Input::Reader(Box::new(stdin().lock()));
         let mut output = Output::Writer(Box::new(stdout().lock()));
-
-        self.pool.run(program, input, &mut output);
-    }
-
-    pub fn parse(&mut self, source: &str) -> ExprId {
-        Parser::parse(source, &mut self.pool)
-    }
-}
-
-// Right now memory is used undafely, so tests don't work in parallel.
-// Run with cargo test -- --test-threads=1
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_church2int() {
-        let mut lk = LazyK::new();
-        for i in 0..5 {
-            assert_eq!(lk.pool.church2int(lk.pool.church_char(i)).unwrap(), i);
-        }
-    }
-
-    #[test]
-    fn test_identity() {
-        let mut lk = LazyK::new();
-        let program = lk.pool.I;
-        assert_eq!(lk.run_string(program, ""), "");
-        assert_eq!(lk.run_string(program, "a"), "a");
-        assert_eq!(lk.run_string(program, "ab"), "ab");
-        assert_eq!(lk.run_string(program, "abc"), "abc");
-        assert_eq!(lk.run_string(program, "abcd"), "abcd");
-    }
-
-    #[test]
-    fn test_hello_world() {
-        let mut source = include_str!("../examples/hello_world.lazy");
-        let mut lk = LazyK::new();
-        let program = lk.parse(source);
-        let result = lk.run_string(program, "");
-        assert_eq!(result, "Hello, world!\n");
-    }
-
-    #[test]
-    fn test_calc() {
-        let mut source = include_str!("../examples/calc.lazy");
-        let mut lk = LazyK::new();
-        let program = lk.parse(source);
-
-        assert_eq!(lk.run_string(program, "2+2"), "4\n");
-        assert_eq!(lk.run_string(program, "3*4"), "12\n");
-        assert_eq!(lk.run_string(program, "2+3*4"), "14\n");
-        assert_eq!(lk.run_string(program, "(2+3)*4"), "20\n");
-        assert_eq!(
-            lk.run_string(program, "1000*1000*1000*1000*1000*1000"),
-            "1000000000000000000\n"
-        );
-    }
-
-    #[test]
-    fn test_reverse() {
-        let mut source = include_str!("../examples/reverse.lazy");
-
-        let mut lk = LazyK::new();
-        let program = lk.parse(source);
-
-        assert_eq!(lk.run_string(program, "a"), "a");
-        assert_eq!(lk.run_string(program, "ab"), "ba");
-        assert_eq!(lk.run_string(program, "aba"), "aba");
-        assert_eq!(lk.run_string(program, ""), "");
-        assert_eq!(lk.run_string(program, "stressed"), "desserts");
-        assert_eq!(lk.run_string(program, "Hello, world!"), "!dlrow ,olleH");
-    }
-
-    #[test]
-    fn test_quine() {
-        let source = include_str!("../examples/quine.lazy");
-        let mut lk = LazyK::new();
-        let program = lk.parse(source);
-        assert_eq!(lk.run_string(program, "a"), source);
-    }
-
-    #[test]
-    fn test_primes() {
-        let source = include_str!("../examples/primes.lazy");
-        let mut lk = LazyK::new();
-        let program = lk.parse(source);
-        assert_eq!(
-            lk.run_string_limited(program, "", 70),
-            "2 3 5 7 11 13 17 19 23 29 31 37 41 43 47 53 59 61 67 71 73 79 83 89 97"
-                .replace(" ", "\n")
-        );
-    }
-
-    #[test]
-    fn test_ab() {
-        let source = include_str!("../examples/ab.lazy");
-        let mut lk = LazyK::new();
-        let program = lk.parse(source);
-        assert_eq!(
-            lk.run_string_limited(program, "", 20),
-            "ABABABABABABABABABAB"
-        );
+        self.pool.run(self.root_id, input, &mut output)
     }
 }
