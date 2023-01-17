@@ -79,6 +79,7 @@ impl Expr {
 
 pub struct ExpressionPool {
     e: Vec<Expr>,
+    free_ids: VecDeque<ExprId>,
     church_chars: Vec<ExprId>,
     S: ExprId,
     K: ExprId,
@@ -90,9 +91,16 @@ pub struct ExpressionPool {
     input: Input,
 }
 
+// Garbade collection is triggered if number of expressions in the pool exceeds
+// this number.
+static GC_LIMIT: usize = 1000000;
+// Number of expressions at the beginning that are never garbage-collected.
+static PREAMBLE_LENGTH: usize = 270;
+
 impl ExpressionPool {
     fn new() -> Self {
-        let mut pool: Vec<Expr> = Vec::with_capacity(10000000);
+        let mut pool: Vec<Expr> = Vec::with_capacity(GC_LIMIT);
+        pool.push(Expr::Free);
         let mut n = |expr: Expr| {
             pool.push(expr);
             return pool.len() - 1;
@@ -115,8 +123,10 @@ impl ExpressionPool {
         for i in 2..EOF_MARKER + 1 {
             church_chars.push(n(Expr::S2(SKSK, church_chars[i - 1])));
         }
+        assert!(pool.len() <= PREAMBLE_LENGTH);
         Self {
             e: pool,
+            free_ids: VecDeque::new(),
             church_chars,
             S,
             K,
@@ -130,8 +140,55 @@ impl ExpressionPool {
     }
 
     fn new_expr(&mut self, expr: Expr) -> ExprId {
-        self.e.push(expr);
-        return self.e.len() - 1;
+        if let Some(id) = self.free_ids.pop_front() {
+            self.e[id] = expr;
+            return id;
+        } else {
+            self.e.push(expr);
+            return self.e.len() - 1;
+        }
+    }
+
+    // Frees all expressions not reachable from expr_id.
+    fn garbage_collect(&mut self, expr_id: ExprId) {
+        if (self.e.len() < GC_LIMIT || self.free_ids.len() >0 ) {
+            return;
+        }
+        //println!("Before garbage collect e={}, free={}", self.e.len(), self.free_ids.len());
+
+        let n = self.e.len();
+
+        // BFS.
+        let mut needed: Vec<bool> = vec![false; n];
+        let mut queue: VecDeque<ExprId> = VecDeque::new();
+        queue.push_back(expr_id);
+        while let Some(next_id) = queue.pop_front() {
+            if (needed[next_id]) {
+                continue;
+            }
+            needed[next_id] = true;
+            match &self.e[next_id] {
+                Expr::A(arg1, arg2) | Expr::S2(arg1, arg2) => {
+                    queue.push_back(*arg1);
+                    queue.push_back(*arg2);
+                }
+                Expr::K1(arg1) | Expr::S1(arg1) | Expr::I1(arg1) => queue.push_back(*arg1),
+                _ => {}
+            }
+        }
+        for i in PREAMBLE_LENGTH..n {
+            if needed[i] {
+                continue;
+            }
+            match self.e[i] {
+                Expr::Free => {}
+                _ => {
+                    self.e[i] = Expr::Free;
+                    self.free_ids.push_back(i);
+                }
+            }
+        }
+        //println!("After garbage collect e={}, free={}", self.e.len(), self.free_ids.len());
     }
 
     fn partial_eval_primitive_application(&mut self, expr_id: ExprId) {
@@ -152,12 +209,8 @@ impl ExpressionPool {
             Expr::S => Expr::S1(rhs),
             Expr::I => Expr::I1(rhs),
             Expr::S1(arg1) => Expr::S2(*arg1, rhs),
-            Expr::LazyRead() => {
-                self.apply_lazy_read(  lhs, rhs)
-            }
-            Expr::S2(arg1, arg2) => {
-                self.apply_s2(*arg1, *arg2, rhs)
-            }
+            Expr::LazyRead() => self.apply_lazy_read(lhs, rhs),
+            Expr::S2(arg1, arg2) => self.apply_s2(*arg1, *arg2, rhs),
             Expr::Inc => {
                 let rhs2 = self.partial_eval(rhs);
                 match self.e[rhs2] {
@@ -170,7 +223,7 @@ impl ExpressionPool {
     }
 
     // lhs points to LazyRead.
-    fn apply_lazy_read(&mut self, lhs: ExprId, rhs: ExprId) -> Expr{
+    fn apply_lazy_read(&mut self, lhs: ExprId, rhs: ExprId) -> Expr {
         let next_char = match self.input.read_byte() {
             Some(ch) => ch as usize,
             None => EOF_MARKER,
@@ -183,8 +236,8 @@ impl ExpressionPool {
         self.e[lhs] = Expr::S2(x, y);
         return self.partial_eval_primitive_application_2(lhs, rhs); // "fall through".
     }
-    
-    fn apply_s2(&mut self, arg1: ExprId, arg2:ExprId, rhs:ExprId) -> Expr{
+
+    fn apply_s2(&mut self, arg1: ExprId, arg2: ExprId, rhs: ExprId) -> Expr {
         let new_lhs = self.partial_apply(arg1, rhs);
         Expr::A(new_lhs, self.partial_apply(arg2, rhs))
     }
@@ -265,6 +318,7 @@ impl ExpressionPool {
         self.input = input;
         let lr = self.new_expr(Expr::LazyRead());
         let mut e = self.partial_apply(expr_id, lr);
+        let mut output_size = 0;
         loop {
             let head = self.car(e);
             let ch = self.church2int(head)?;
@@ -273,6 +327,10 @@ impl ExpressionPool {
             }
             output.write_char(ch as u8)?;
             e = self.cdr(e);
+            output_size+=1;
+            if (output_size % 100 == 0) {
+                self.garbage_collect(e);
+            }
         }
     }
 }
@@ -345,9 +403,7 @@ impl Output {
                 buf.push(c);
                 Ok(())
             }
-            Self::Writer(w) => {
-               w.write_u8(c).map_err(|_| Error::IoError)
-            }
+            Self::Writer(w) => w.write_u8(c).map_err(|_| Error::IoError),
         }
     }
 }
@@ -616,7 +672,8 @@ mod tests {
         let program = lk.parse(source);
         assert_eq!(
             lk.run_string_limited(program, "", 70),
-            "2 3 5 7 11 13 17 19 23 29 31 37 41 43 47 53 59 61 67 71 73 79 83 89 97".replace(" ", "\n")
+            "2 3 5 7 11 13 17 19 23 29 31 37 41 43 47 53 59 61 67 71 73 79 83 89 97"
+                .replace(" ", "\n")
         );
     }
 
