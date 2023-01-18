@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use lazyk_rust::parser::LazyKProgram;
+use lazyk_rust::LazyKProgram;
 
 fn parse_and_run(source: &str, input: &str) -> () {
     let mut program = LazyKProgram::compile(source).unwrap();

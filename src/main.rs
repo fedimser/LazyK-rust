@@ -1,8 +1,6 @@
-mod parser;
+use lazyk_rust::LazyKProgram;
 use std::env;
 use std::fs;
-
-use lazyk_rust::parser::LazyKProgram;
 
 fn main() {
     let args: Vec<String> = env::args().collect();

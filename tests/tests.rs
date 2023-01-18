@@ -1,4 +1,7 @@
-use lazyk_rust::parser::{ExpressionPool, LazyKProgram};
+use std::ops::Deref;
+
+use anyhow::Result;
+use lazyk_rust::{runner::ExpressionPool, LazyKProgram};
 
 #[test]
 fn test_church2int() {
@@ -9,70 +12,111 @@ fn test_church2int() {
 }
 
 #[test]
-fn test_identity() {
+fn test_identity() -> Result<()> {
     let mut program = LazyKProgram::compile("I").unwrap();
-    assert_eq!(program.run_string(""), "");
-    assert_eq!(program.run_string("abcd"), "abcd");
+    assert_eq!(program.run_string("")?, "");
+    assert_eq!(program.run_string("abcd")?, "abcd");
+    Ok(())
 }
 
 #[test]
-fn test_hello_world() {
+fn test_hello_world() -> Result<()> {
     let source = include_str!("../examples/hello_world.lazy");
     let mut program = LazyKProgram::compile(source).unwrap();
-    assert_eq!(program.run_string(""), "Hello, world!\n");
-    assert_eq!(program.run_string("abcd"), "Hello, world!\n");
+    assert_eq!(program.run_string("")?, "Hello, world!\n");
+    assert_eq!(program.run_string("abcd")?, "Hello, world!\n");
+    Ok(())
 }
 
 #[test]
-fn test_calc() {
+fn test_calc() -> Result<()> {
     let source = include_str!("../examples/calc.lazy");
     let mut program = LazyKProgram::compile(source).unwrap();
 
-    assert_eq!(program.run_string("2+2"), "4\n");
-    assert_eq!(program.run_string("3*4"), "12\n");
-    assert_eq!(program.run_string("2+3*4"), "14\n");
-    assert_eq!(program.run_string("(2+3)*4"), "20\n");
+    assert_eq!(program.run_string("2+2")?, "4\n");
+    assert_eq!(program.run_string("3*4")?, "12\n");
+    assert_eq!(program.run_string("2+3*4")?, "14\n");
+    assert_eq!(program.run_string("(2+3)*4")?, "20\n");
     assert_eq!(
-        program.run_string("1000*1000*1000*1000*1000*1000"),
+        program.run_string("1000*1000*1000*1000*1000*1000")?,
         "1000000000000000000\n"
     );
+    Ok(())
 }
 
 #[test]
-fn test_reverse() {
+fn test_reverse() -> Result<()> {
     let source = include_str!("../examples/reverse.lazy");
     let mut program = LazyKProgram::compile(source).unwrap();
 
-    assert_eq!(program.run_string("a"), "a");
-    assert_eq!(program.run_string("ab"), "ba");
-    assert_eq!(program.run_string("aba"), "aba");
-    assert_eq!(program.run_string(""), "");
-    assert_eq!(program.run_string("stressed"), "desserts");
-    assert_eq!(program.run_string("Hello, world!"), "!dlrow ,olleH");
-    assert_eq!(program.run_string("abcde12345".repeat(100).as_str()), "54321edcba".repeat(100));
+    assert_eq!(program.run_string("a")?, "a");
+    assert_eq!(program.run_string("ab")?, "ba");
+    assert_eq!(program.run_string("aba")?, "aba");
+    assert_eq!(program.run_string("")?, "");
+    assert_eq!(program.run_string("stressed")?, "desserts");
+    assert_eq!(program.run_string("Hello, world!")?, "!dlrow ,olleH");
+    assert_eq!(
+        program.run_string("abcde12345".repeat(100).as_str())?,
+        "54321edcba".repeat(100)
+    );
+    Ok(())
 }
 
 #[test]
-fn test_quine() {
+fn test_quine() -> Result<()> {
     let source = include_str!("../examples/quine.lazy");
     let mut program = LazyKProgram::compile(source).unwrap();
-    assert_eq!(program.run_string(""), source);
+    assert_eq!(program.run_string("")?, source);
+    Ok(())
 }
 
 #[test]
-fn test_primes() {
+fn test_primes() -> Result<()> {
     let source = include_str!("../examples/primes.lazy");
     let mut program = LazyKProgram::compile(source).unwrap();
-    assert_eq!(program.run_string_limited("", 1), "2");
+    program.set_output_limit(Some(1));
+    assert_eq!(program.run_string("")?, "2");
+    program.set_output_limit(Some(70));
     assert_eq!(
-        program.run_string_limited("", 70),
+        program.run_string("")?,
         "2 3 5 7 11 13 17 19 23 29 31 37 41 43 47 53 59 61 67 71 73 79 83 89 97".replace(" ", "\n")
     );
+    Ok(())
 }
 
 #[test]
-fn test_abab() {
+fn test_abab() -> Result<()> {
     let source = include_str!("../examples/ab.lazy");
     let mut program = LazyKProgram::compile(source).unwrap();
-    assert_eq!(program.run_string_limited("", 20), "ABABABABABABABABABAB");
+    program.set_output_limit(Some(100));
+    assert_eq!(program.run_string("")?, "AB".repeat(50));
+    Ok(())
+}
+
+fn assert_error<T>(x: Result<T>, expected_message: &str) {
+    match x {
+        Ok(_) => panic!("Expected error, got Ok."),
+        Err(err) => assert_eq!(err.root_cause().deref().to_string(), expected_message),
+    }
+}
+
+#[test]
+fn test_parse_errors() -> Result<()> {
+    assert_error(LazyKProgram::compile("((("), "Premature end of program.");
+    assert_error(LazyKProgram::compile("abcd"), "Invalid character: [a]");
+    assert_error(
+        LazyKProgram::compile("(KS))"),
+        "Unmatched trailing close-parenthesis.",
+    );
+    Ok(())
+}
+
+#[test]
+fn test_runtime_errors() -> Result<()> {
+    let mut program = LazyKProgram::compile("KSKSKSKKS")?;
+    assert_error(
+        program.run_string(""),
+        "Program's output is not a church numeral.",
+    );
+    Ok(())
 }
