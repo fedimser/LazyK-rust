@@ -1,21 +1,44 @@
+use clap::Parser;
 use lazyk_rust::LazyKProgram;
-use std::env;
 use std::fs;
 
+/// LazyK interpreter by Dmytro Fedoriaka.
+#[derive(Parser, Debug)]
+#[command(about)]
+struct Args {
+    /// Path to LazyK program to run.
+    #[arg(index = 1)]
+    program_file: String,
+
+    /// Indicates that PROGRAM_FILE should be interpreted as in-line LazyK code.
+    #[arg(short)]
+    e: bool,
+}
+
 fn main() {
-    let args: Vec<String> = env::args().collect();
-    let mut source = "".to_string();
-    if args.len() >= 2 {
-        let source_path = &args[1];
-        println!("source_path : {}", source_path);
-        source = match fs::read_to_string(source_path) {
+    let args = Args::parse();
+    let source = if args.e {
+        args.program_file
+    } else {
+        match fs::read_to_string(args.program_file) {
             Ok(x) => x,
-            Err(err) => panic!("Could not read source: {}", err),
-        };
-    }
-    let mut program = LazyKProgram::compile(&source).expect("Parse error.");
+            Err(err) => {
+                println!("Could not read source: {}", err);
+                return;
+            }
+        }
+    };
+
+    let mut program = match LazyKProgram::compile(&source) {
+        Ok(program) => program,
+        Err(err) => {
+            println!("Parsing error: {}", err);
+            return;
+        }
+    };
+
     match program.run_console() {
-        Ok(_) => (),
-        Err(_) => println!("Execution ended with error."),
+        Ok(_) => {}
+        Err(err) => println!("Runtime error: {}", err),
     }
 }

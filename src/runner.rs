@@ -5,7 +5,7 @@ use crate::{
 use anyhow::{bail, Result};
 use std::collections::VecDeque;
 
-pub struct ExpressionPool {
+pub struct LazyKRunner {
     e: Vec<Expr>,
     free_ids: VecDeque<ExprId>,
     church_chars: Vec<ExprId>,
@@ -27,7 +27,7 @@ static PREAMBLE_LENGTH: usize = 270;
 // This Church number is used to mark end of input/output.
 static EOF_MARKER: usize = 256;
 
-impl ExpressionPool {
+impl LazyKRunner {
     pub fn new() -> Self {
         let mut pool: Vec<Expr> = Vec::with_capacity(GC_LIMIT);
         pool.push(Expr::Free);

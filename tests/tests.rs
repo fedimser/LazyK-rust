@@ -1,11 +1,11 @@
 use std::ops::Deref;
 
 use anyhow::Result;
-use lazyk_rust::{runner::ExpressionPool, LazyKProgram};
+use lazyk_rust::{runner::LazyKRunner, LazyKProgram};
 
 #[test]
 fn test_church2int() {
-    let mut pool = ExpressionPool::new();
+    let mut pool = LazyKRunner::new();
     for i in 0..5 {
         assert_eq!(pool.church2int(pool.church_char(i)).unwrap(), i);
     }

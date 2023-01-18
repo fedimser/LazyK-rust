@@ -4,7 +4,7 @@ use {
     expression::ExprId,
     io::{Input, Output},
     parser::Parser,
-    runner::ExpressionPool,
+    runner::LazyKRunner,
 };
 
 mod expression;
@@ -13,7 +13,7 @@ mod parser;
 pub mod runner;
 
 pub struct LazyKProgram {
-    pool: ExpressionPool,
+    pool: LazyKRunner,
     root_id: ExprId,
     output_limit: Option<usize>,
 }
@@ -21,7 +21,7 @@ pub struct LazyKProgram {
 impl LazyKProgram {
     // Compiles LazyK source to a runnable program.
     pub fn compile(source: &str) -> Result<Self> {
-        let mut pool = ExpressionPool::new();
+        let mut pool = LazyKRunner::new();
         let root_id = Parser::parse(source, &mut pool)?;
         Ok(Self {
             pool,

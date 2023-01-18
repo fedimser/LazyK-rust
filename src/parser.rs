@@ -1,10 +1,10 @@
-use crate::{expression::ExprId, runner::ExpressionPool};
+use crate::{expression::ExprId, runner::LazyKRunner};
 use anyhow::{bail, ensure, Result};
 
 pub struct Parser {}
 
 impl Parser {
-    fn parse_jot(source: &mut &[u8], pool: &mut ExpressionPool) -> ExprId {
+    fn parse_jot(source: &mut &[u8], pool: &mut LazyKRunner) -> ExprId {
         let mut e = pool.i;
         let mut i = 0;
         while i != source.len() {
@@ -46,7 +46,7 @@ impl Parser {
     fn parse_expr(
         source: &mut &[u8],
         i_is_iota: bool,
-        pool: &mut ExpressionPool,
+        pool: &mut LazyKRunner,
     ) -> Result<ExprId> {
         Self::skip_whitespace_and_comments(source);
         if source.is_empty() {
@@ -83,7 +83,7 @@ impl Parser {
     fn parse_manual_close(
         source: &mut &[u8],
         expected_closing_paren: bool,
-        pool: &mut ExpressionPool,
+        pool: &mut LazyKRunner,
     ) -> Result<ExprId> {
         let mut e: Option<ExprId> = None;
         loop {
@@ -109,7 +109,7 @@ impl Parser {
         }
     }
 
-    pub fn parse(source: &str, pool: &mut ExpressionPool) -> Result<ExprId> {
+    pub fn parse(source: &str, pool: &mut LazyKRunner) -> Result<ExprId> {
         let mut b = source.as_bytes();
         Self::parse_manual_close(&mut b, false, pool)
     }
