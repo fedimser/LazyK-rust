@@ -1,7 +1,6 @@
-use std::ops::Deref;
-
 use anyhow::Result;
 use lazyk_rust::{runner::LazyKRunner, LazyKProgram};
+use std::ops::Deref;
 
 #[test]
 fn test_church2int() {
@@ -48,7 +47,6 @@ fn test_calc() -> Result<()> {
 fn test_reverse() -> Result<()> {
     let source = include_str!("../examples/reverse.lazy");
     let mut program = LazyKProgram::compile(source).unwrap();
-
     assert_eq!(program.run_string("a")?, "a");
     assert_eq!(program.run_string("ab")?, "ba");
     assert_eq!(program.run_string("aba")?, "aba");
