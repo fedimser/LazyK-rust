@@ -12,8 +12,9 @@ fn test_church2int() {
 
 #[test]
 fn test_identity() -> Result<()> {
-    let mut program = LazyKProgram::compile("I").unwrap();
-    assert_eq!(program.run_string("")?, "");
+    let source = "I";
+    let mut program = LazyKProgram::compile(source).unwrap();
+    assert_eq!(program.run_string("").unwrap(), "");
     assert_eq!(program.run_string("abcd")?, "abcd");
     Ok(())
 }

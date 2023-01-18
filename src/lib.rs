@@ -7,9 +7,9 @@ use {
     runner::LazyKRunner,
 };
 
-mod expression;
-mod io;
-mod parser;
+pub mod expression;
+pub mod io;
+pub mod parser;
 pub mod runner;
 
 pub struct LazyKProgram {
@@ -18,6 +18,16 @@ pub struct LazyKProgram {
     output_limit: Option<usize>,
 }
 
+/// Compiled LazyK program, ready to be executed.
+/// 
+/// # Example
+///
+/// ```
+/// use lazyk_rust::LazyKProgram;
+/// let source = "I";
+/// let mut program = LazyKProgram::compile(source).unwrap();
+/// assert_eq!(program.run_string("abcd").unwrap(), "abcd");
+/// ```
 impl LazyKProgram {
     // Compiles LazyK source to a runnable program.
     pub fn compile(source: &str) -> Result<Self> {
@@ -30,13 +40,13 @@ impl LazyKProgram {
         })
     }
 
-    // Sets maximal number of cbytes in output, after which program halts.
-    // Useful for running programs that produce infinite ouput.
+    /// Sets maximal number of cbytes in output, after which program halts.
+    /// Useful for running programs that produce infinite ouput.
     pub fn set_output_limit(&mut self, value: Option<usize>) {
         self.output_limit = value;
     }
 
-    // Runs program as Vec<u8> -> Vec<u8> function.
+    /// Runs program as Vec<u8> -> Vec<u8> function.
     pub fn run_vec(&mut self, input: Vec<u8>) -> Result<Vec<u8>> {
         let input = Input::Reader(Box::new(Cursor::new(input)));
         let mut output = Output::Buffer(Vec::new());
@@ -48,13 +58,13 @@ impl LazyKProgram {
         }
     }
 
-    // Runs program as String -> String function.
+    /// Runs program as String -> String function.
     pub fn run_string(&mut self, input: &str) -> Result<String> {
         let result = self.run_vec(input.as_bytes().to_owned())?;
         Ok(String::from_utf8(result).map_err(anyhow::Error::from)?)
     }
 
-    // Runs program, reading from standard input and writing to standard output.
+    /// Runs program, reading from standard input and writing to standard output.
     pub fn run_console(&mut self) -> Result<()> {
         let input = Input::Reader(Box::new(stdin().lock()));
         let mut output = Output::Writer(Box::new(stdout().lock()));
