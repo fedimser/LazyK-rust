@@ -35,8 +35,6 @@ assert_eq!(program.run_string("abcd").unwrap(), "abcd");
 
 For more details, see tests and `LazyKProgram` class documentation.
 
-Also you may use `LazyKRunner` to directly create expressions.
-
 ## Implemenation details
 
 This interpreter fully implements the specification. It's also fully safe (it doesn't use unsafe Rust).
