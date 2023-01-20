@@ -68,7 +68,7 @@ impl LazyKRunner {
         }
     }
 
-    fn new_expr(&mut self, expr: Expr) -> ExprId {
+    pub(crate) fn new_expr(&mut self, expr: Expr) -> ExprId {
         if let Some(id) = self.free_ids.pop_front() {
             self.e[id] = expr;
             return id;
@@ -231,6 +231,15 @@ impl LazyKRunner {
         return self.partial_apply(list, self.ki);
     }
 
+    // pair(X,Y)F := (FX)Y
+    // pair(X,Y) = S(SI(KX))(KY)
+    pub(crate) fn pair(&mut self, x: ExprId, y: ExprId) -> ExprId {
+        let d = self.new_expr(Expr::K1(x));
+        let a = self.new_expr(Expr::S2(self.i, d));
+        let b = self.new_expr(Expr::K1(y));
+        return self.new_expr(Expr::S2(a, b));
+    }
+
     pub fn church_char(&self, mut idx: usize) -> ExprId {
         if idx > EOF_MARKER {
             idx = EOF_MARKER;
@@ -264,6 +273,45 @@ impl LazyKRunner {
             if output_limit.is_some() && output_limit.unwrap() == output_size {
                 return Ok(1);
             }
+        }
+    }
+
+    pub(crate) fn print_expr(&self, expr_id: ExprId, output: &mut String) {
+        match self.e[expr_id] {
+            Expr::A(arg1, arg2) => {
+                output.push('(');
+                self.print_expr(arg1, output);
+                self.print_expr(arg2, output);
+                output.push(')');
+            }
+            Expr::K => output.push('K'),
+            Expr::K1(arg) => {
+                output.push('(');
+                output.push('K');
+                self.print_expr(arg, output);
+                output.push(')');
+            }
+            Expr::S => output.push('S'),
+            Expr::S1(arg) => {
+                output.push('(');
+                output.push('S');
+                self.print_expr(arg, output);
+                output.push(')');
+            }
+            Expr::S2(arg1, arg2) => {
+                output.push_str("((S");
+                self.print_expr(arg1, output);
+                output.push(')');
+                self.print_expr(arg2, output);
+                output.push(')');
+            }
+            Expr::I => output.push('I'),
+            Expr::I1(arg) => {
+                output.push_str("(I");
+                self.print_expr(arg, output);
+                output.push(')');
+            }
+            _ => panic!("Encountered unprintable expression type."),
         }
     }
 }
