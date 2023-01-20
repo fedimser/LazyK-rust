@@ -125,13 +125,12 @@ fn test_make_printer() -> Result<()> {
     let text = "Hallo Welt!\n";
     let mut program = LazyKProgram::make_printer(text.as_bytes());
     assert_eq!(program.run_string("")?, "Hallo Welt!\n");
-    
+
     let source = program.to_string();
     let expected_source = include_str!("../examples/hallo_welt.lazy");
-    println!("{}", expected_source.len());
     assert_eq!(source, expected_source);
     let mut program2 = LazyKProgram::compile(&source)?;
-    assert_eq!(program2.run_string("")?, "Hallo Welt!\n");   
+    assert_eq!(program2.run_string("")?, "Hallo Welt!\n");
 
     Ok(())
 }
