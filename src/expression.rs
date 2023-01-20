@@ -11,6 +11,11 @@ pub enum Expr {
     I1(ExprId),
     LazyRead,
     Inc,
-    Num(usize),
+    Num(u16),
     Free,
+}
+
+#[test]
+fn check_size() {
+    assert_eq!(std::mem::size_of::<Expr>(), 12);
 }

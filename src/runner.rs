@@ -26,7 +26,7 @@ static GC_LIMIT: usize = 1000000;
 // Number of expressions at the beginning that are never garbage-collected.
 static PREAMBLE_LENGTH: usize = 448;
 // This Church number is used to mark end of input/output.
-static EOF_MARKER: usize = 256;
+static EOF_MARKER: u16 = 256;
 
 impl LazyKRunner {
     pub fn new() -> Self {
@@ -50,7 +50,7 @@ impl LazyKRunner {
         let zero = n(Expr::Num(0));
 
         let mut church_chars = vec![ki, i];
-        for i in 2..EOF_MARKER + 1 {
+        for i in 2..=EOF_MARKER {
             let church_expr = match num_repr(i) {
                 NumRepr::Pow(a, b) => Expr::A(church_chars[b], church_chars[a]),
                 NumRepr::Mul(a, b) => Expr::S2(n(Expr::K1(church_chars[a])), church_chars[b]),
@@ -157,7 +157,7 @@ impl LazyKRunner {
     // lhs points to LazyRead.
     fn apply_lazy_read(&mut self, lhs: ExprId, rhs: ExprId) -> Expr {
         let next_char = match self.input.read_byte() {
-            Some(ch) => ch as usize,
+            Some(ch) => ch as u16,
             None => EOF_MARKER,
         };
         let ch = self.church_char(next_char);
@@ -219,7 +219,7 @@ impl LazyKRunner {
         }
     }
 
-    pub fn church2int(&mut self, church: ExprId) -> Result<usize> {
+    pub fn church2int(&mut self, church: ExprId) -> Result<u16> {
         let inc = self.partial_apply(church, self.inc);
         let e = self.partial_apply(inc, self.zero);
         let result_id = self.partial_eval(e);
@@ -246,11 +246,11 @@ impl LazyKRunner {
         return self.new_expr(Expr::S2(a, b));
     }
 
-    pub fn church_char(&self, mut idx: usize) -> ExprId {
+    pub fn church_char(&self, mut idx: u16) -> ExprId {
         if idx > EOF_MARKER {
             idx = EOF_MARKER;
         }
-        self.church_chars[idx]
+        self.church_chars[idx as usize]
     }
 
     pub fn run(
@@ -259,7 +259,7 @@ impl LazyKRunner {
         input: Input,
         output: &mut Output,
         output_limit: Option<usize>,
-    ) -> Result<usize> {
+    ) -> Result<u16> {
         self.input = input;
         let lr = self.new_expr(Expr::LazyRead);
         let mut e = self.partial_apply(expr_id, lr);

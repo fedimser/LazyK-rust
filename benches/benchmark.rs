@@ -7,9 +7,11 @@ fn parse_and_run(source: &str, input: &str) -> () {
 }
 
 fn criterion_benchmark(c: &mut Criterion) {
-    let source = include_str!("../examples/reverse.lazy");    
+    let source = include_str!("../examples/reverse.lazy");
     let input = "abcde12345".repeat(100);
-    c.bench_function("reverse 1000", |b| b.iter(|| parse_and_run(&source, &input)));
+    c.bench_function("reverse 1000", |b| {
+        b.iter(|| parse_and_run(&source, &input))
+    });
 }
 
 criterion_group!(benches, criterion_benchmark);

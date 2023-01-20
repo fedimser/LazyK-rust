@@ -87,7 +87,7 @@ impl LazyKProgram {
         let eof = runner.church_char(256);
         let mut list = runner.pair(eof, runner.k);
         for i in (0..bytes.len()).rev() {
-            list = runner.pair(runner.church_char(bytes[i] as usize), list);
+            list = runner.pair(runner.church_char(bytes[i] as u16), list);
         }
         let root_id = runner.new_expr(Expr::K1(list));
         Self {

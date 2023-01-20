@@ -5,7 +5,7 @@ pub(crate) enum NumRepr {
 }
 
 /// Finds the optimal way to represent Church numeral using lower numerals.
-pub(crate) fn num_repr(x: usize) -> NumRepr {
+pub(crate) fn num_repr(x: u16) -> NumRepr {
     match x {
         8 => NumRepr::Pow(2, 3),
         16 => NumRepr::Pow(2, 4),
@@ -21,19 +21,19 @@ pub(crate) fn num_repr(x: usize) -> NumRepr {
     }
 }
 
-fn num_repr_no_high_powers(x: usize) -> NumRepr {
+fn num_repr_no_high_powers(x: u16) -> NumRepr {
     // Try squares.
     for d in 2..15 {
         if d * d == x {
-            return NumRepr::Pow(d, 2);
+            return NumRepr::Pow(d as usize, 2);
         }
     }
     // Try products of 2 numbers.
-    let sqrt = (x as f32).sqrt().floor() as usize;
+    let sqrt = (x as f32).sqrt().floor() as u16;
     for d in (2..=sqrt).rev() {
         if x % d == 0 {
-            return NumRepr::Mul(d, x/d);
+            return NumRepr::Mul(d as usize, (x/d) as usize);
         }
     }
-    NumRepr::Inc(x - 1)
+    NumRepr::Inc((x - 1) as usize)
 }
