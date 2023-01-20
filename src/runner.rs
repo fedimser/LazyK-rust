@@ -34,7 +34,7 @@ impl LazyKRunner {
         pool.push(Expr::Free);
         let mut n = |expr: Expr| {
             pool.push(expr);
-            return pool.len() - 1;
+            return (pool.len() - 1) as ExprId;
         };
 
         let k = n(Expr::K);
@@ -76,11 +76,11 @@ impl LazyKRunner {
 
     pub(crate) fn new_expr(&mut self, expr: Expr) -> ExprId {
         if let Some(id) = self.free_ids.pop_front() {
-            self.e[id] = expr;
+            self.e[id as usize] = expr;
             return id;
         } else {
             self.e.push(expr);
-            return self.e.len() - 1;
+            return (self.e.len() - 1) as ExprId;
         }
     }
 
@@ -97,11 +97,11 @@ impl LazyKRunner {
         let mut queue: VecDeque<ExprId> = VecDeque::new();
         queue.push_back(expr_id);
         while let Some(next_id) = queue.pop_front() {
-            if needed[next_id] {
+            if needed[next_id as usize] {
                 continue;
             }
-            needed[next_id] = true;
-            match &self.e[next_id] {
+            needed[next_id as usize] = true;
+            match &self.e[next_id as usize] {
                 Expr::A(arg1, arg2) | Expr::S2(arg1, arg2) => {
                     queue.push_back(*arg1);
                     queue.push_back(*arg2);
@@ -118,16 +118,16 @@ impl LazyKRunner {
                 Expr::Free => {}
                 _ => {
                     self.e[i] = Expr::Free;
-                    self.free_ids.push_back(i);
+                    self.free_ids.push_back(i as ExprId);
                 }
             }
         }
     }
 
     fn partial_eval_primitive_application(&mut self, expr_id: ExprId) {
-        match self.e[expr_id] {
+        match self.e[expr_id as usize] {
             Expr::A(lhs, rhs) => {
-                self.e[expr_id] = self.partial_eval_primitive_application_2(lhs, rhs);
+                self.e[expr_id as usize] = self.partial_eval_primitive_application_2(lhs, rhs);
             }
             _ => panic!("Not an application!"),
         }
@@ -135,7 +135,7 @@ impl LazyKRunner {
 
     fn partial_eval_primitive_application_2(&mut self, lhs: ExprId, rhs: ExprId) -> Expr {
         let rhs = self.drop_i1(rhs);
-        match &self.e[lhs] {
+        match &self.e[lhs as usize] {
             Expr::K => Expr::K1(rhs),
             Expr::K1(arg1) => Expr::I1(*arg1),
             Expr::S => Expr::S1(rhs),
@@ -145,7 +145,7 @@ impl LazyKRunner {
             Expr::S2(arg1, arg2) => self.apply_s2(*arg1, *arg2, rhs),
             Expr::Inc => {
                 let rhs2 = self.partial_eval(rhs);
-                match self.e[rhs2] {
+                match self.e[rhs2 as usize] {
                     Expr::Num(num) => Expr::Num(num + 1),
                     _ => panic!("Attempted to apply inc to a non-number"),
                 }
@@ -165,7 +165,7 @@ impl LazyKRunner {
         let x = self.new_expr(Expr::S2(self.i, x_rhs));
         let new_lazy_read = self.new_expr(Expr::LazyRead);
         let y = self.new_expr(Expr::K1(new_lazy_read));
-        self.e[lhs] = Expr::S2(x, y);
+        self.e[lhs as usize] = Expr::S2(x, y);
         return self.partial_eval_primitive_application_2(lhs, rhs); // "fall through".
     }
 
@@ -181,7 +181,7 @@ impl LazyKRunner {
     fn drop_i1(&self, expr: ExprId) -> ExprId {
         let mut cur = expr;
         loop {
-            if let Expr::I1(arg1) = self.e[cur] {
+            if let Expr::I1(arg1) = self.e[cur as usize] {
                 cur = arg1;
             } else {
                 return cur;
@@ -193,7 +193,7 @@ impl LazyKRunner {
         let mut prev: ExprId = 0;
         loop {
             cur = self.drop_i1(cur);
-            while let Expr::A(_, _) = self.e[cur] {
+            while let Expr::A(_, _) = self.e[cur as usize] {
                 self.swap_arg1(cur, &mut prev);
                 let next = self.drop_i1(prev);
                 prev = cur;
@@ -213,7 +213,7 @@ impl LazyKRunner {
     }
 
     fn swap_arg1(&mut self, app_id: ExprId, other_arg1: &mut ExprId) {
-        match &mut self.e[app_id] {
+        match &mut self.e[app_id as usize] {
             Expr::A(arg1, _) => std::mem::swap(arg1, other_arg1),
             _ => panic!("Unexpected expression type."),
         }
@@ -223,7 +223,7 @@ impl LazyKRunner {
         let inc = self.partial_apply(church, self.inc);
         let e = self.partial_apply(inc, self.zero);
         let result_id = self.partial_eval(e);
-        match self.e[result_id] {
+        match self.e[result_id as usize] {
             Expr::Num(num) => Ok(num),
             _ => bail!("Program's output is not a church numeral."),
         }
@@ -283,7 +283,7 @@ impl LazyKRunner {
     }
 
     pub fn print_expr(&self, expr_id: ExprId, output: &mut String) {
-        match self.e[expr_id] {
+        match self.e[expr_id as usize] {
             Expr::A(arg1, arg2) => {
                 output.push('(');
                 self.print_expr(arg1, output);

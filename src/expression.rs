@@ -1,4 +1,4 @@
-pub type ExprId = usize;
+pub type ExprId = u32;
 
 pub enum Expr {
     A(ExprId, ExprId),
