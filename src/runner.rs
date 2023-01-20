@@ -1,6 +1,7 @@
 use crate::{
     expression::{Expr, ExprId},
     io::{Input, Output},
+    util::{num_repr, NumRepr},
 };
 use anyhow::{bail, Result};
 use std::collections::VecDeque;
@@ -23,7 +24,7 @@ pub struct LazyKRunner {
 // this number.
 static GC_LIMIT: usize = 1000000;
 // Number of expressions at the beginning that are never garbage-collected.
-static PREAMBLE_LENGTH: usize = 270;
+static PREAMBLE_LENGTH: usize = 448;
 // This Church number is used to mark end of input/output.
 static EOF_MARKER: usize = 256;
 
@@ -50,7 +51,12 @@ impl LazyKRunner {
 
         let mut church_chars = vec![ki, i];
         for i in 2..EOF_MARKER + 1 {
-            church_chars.push(n(Expr::S2(sksk, church_chars[i - 1])));
+            let church_expr = match num_repr(i) {
+                NumRepr::Pow(a, b) => Expr::A(church_chars[b], church_chars[a]),
+                NumRepr::Mul(a, b) => Expr::S2(n(Expr::K1(church_chars[a])), church_chars[b]),
+                NumRepr::Inc(a) => Expr::S2(sksk, church_chars[a]),
+            };
+            church_chars.push(n(church_expr));
         }
         assert!(pool.len() <= PREAMBLE_LENGTH);
         Self {
@@ -276,7 +282,7 @@ impl LazyKRunner {
         }
     }
 
-    pub(crate) fn print_expr(&self, expr_id: ExprId, output: &mut String) {
+    pub fn print_expr(&self, expr_id: ExprId, output: &mut String) {
         match self.e[expr_id] {
             Expr::A(arg1, arg2) => {
                 output.push('(');
@@ -313,5 +319,11 @@ impl LazyKRunner {
             }
             _ => panic!("Encountered unprintable expression type."),
         }
+    }
+}
+
+impl Default for LazyKRunner {
+    fn default() -> Self {
+        Self::new()
     }
 }
