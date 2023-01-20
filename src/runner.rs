@@ -8,7 +8,6 @@ use std::collections::VecDeque;
 
 pub struct LazyKRunner {
     e: Vec<Expr>,
-    free_ids: VecDeque<ExprId>,
     church_chars: Vec<ExprId>,
     pub s: ExprId,
     pub k: ExprId,
@@ -18,6 +17,11 @@ pub struct LazyKRunner {
     pub zero: ExprId,
     pub iota: ExprId,
     input: Input,
+
+    // If zero, there are no Free slots.
+    // If not zero, id of next potential slot.
+    gc_free_ptr: usize,
+    gc_queue: VecDeque<ExprId>,
 }
 
 // Garbade collection is triggered if number of expressions in the pool exceeds
@@ -61,7 +65,6 @@ impl LazyKRunner {
         assert!(pool.len() <= PREAMBLE_LENGTH);
         Self {
             e: pool,
-            free_ids: VecDeque::new(),
             church_chars,
             s,
             k,
@@ -71,22 +74,41 @@ impl LazyKRunner {
             zero,
             iota,
             input: Input::Null,
+            gc_free_ptr: 0,
+            gc_queue: VecDeque::new(),
         }
     }
 
+    #[inline(always)]
+    fn new_expr_push(&mut self, expr: Expr) -> ExprId {
+        let ans = self.e.len() as ExprId;
+        self.e.push(expr);
+        ans
+    }
+
     pub(crate) fn new_expr(&mut self, expr: Expr) -> ExprId {
-        if let Some(id) = self.free_ids.pop_front() {
-            self.e[id as usize] = expr;
-            return id;
-        } else {
-            self.e.push(expr);
-            return (self.e.len() - 1) as ExprId;
+        if self.gc_free_ptr == 0 {
+            return self.new_expr_push(expr);
         }
+        // Try use next free slot.
+        for i in self.gc_free_ptr..self.e.len() {
+            match self.e[i] {
+                Expr::Free => {
+                    self.e[i] = expr;
+                    self.gc_free_ptr = i + 1;
+                    return i as ExprId;
+                }
+                _ => {}
+            }
+        }
+        // Reached end of allocated pool, push.
+        self.gc_free_ptr = 0;
+        self.new_expr_push(expr)
     }
 
     // Frees all expressions not reachable from expr_id.
     fn garbage_collect(&mut self, expr_id: ExprId) {
-        if self.e.len() < GC_LIMIT || self.free_ids.len() > 0 {
+        if self.gc_free_ptr != 0 || self.e.len() < GC_LIMIT {
             return;
         }
 
@@ -94,34 +116,27 @@ impl LazyKRunner {
 
         // BFS.
         let mut needed: Vec<bool> = vec![false; n];
-        let mut queue: VecDeque<ExprId> = VecDeque::new();
-        queue.push_back(expr_id);
-        while let Some(next_id) = queue.pop_front() {
+        self.gc_queue.push_back(expr_id);
+        while let Some(next_id) = self.gc_queue.pop_front() {
             if needed[next_id as usize] {
                 continue;
             }
             needed[next_id as usize] = true;
             match &self.e[next_id as usize] {
                 Expr::A(arg1, arg2) | Expr::S2(arg1, arg2) => {
-                    queue.push_back(*arg1);
-                    queue.push_back(*arg2);
+                    self.gc_queue.push_back(*arg1);
+                    self.gc_queue.push_back(*arg2);
                 }
-                Expr::K1(arg1) | Expr::S1(arg1) | Expr::I1(arg1) => queue.push_back(*arg1),
+                Expr::K1(arg1) | Expr::S1(arg1) | Expr::I1(arg1) => self.gc_queue.push_back(*arg1),
                 _ => {}
             }
         }
         for i in PREAMBLE_LENGTH..n {
-            if needed[i] {
-                continue;
-            }
-            match self.e[i] {
-                Expr::Free => {}
-                _ => {
-                    self.e[i] = Expr::Free;
-                    self.free_ids.push_back(i as ExprId);
-                }
+            if !needed[i] {
+                self.e[i] = Expr::Free;
             }
         }
+        self.gc_free_ptr = PREAMBLE_LENGTH;
     }
 
     fn partial_eval_primitive_application(&mut self, expr_id: ExprId) {
@@ -273,9 +288,7 @@ impl LazyKRunner {
             output.write_char(ch as u8)?;
             e = self.cdr(e);
             output_size += 1;
-            if output_size % 100 == 0 {
-                self.garbage_collect(e);
-            }
+            self.garbage_collect(e);
             if output_limit.is_some() && output_limit.unwrap() == output_size {
                 return Ok(1);
             }
