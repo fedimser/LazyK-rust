@@ -43,7 +43,7 @@ It uses generally the same approach as in the reference implementation (`lazy_or
 
 The reference imnplementation uses pointers and manual reference counting. Pointers in Rust are unsafe, so this implementation keeps all expressions in a vector which serves as an expression pool, and uses integer indices instead of pointers.
 
-Instead of reference counting, this implementation uses garbage collection. Every now and then it finds all unreachable expressions and replaces them with special "Free" value. It also maintains a queue (VecDeque) of free indices which can be reclaimed for new expressions. 
+Instead of reference counting, this implementation uses garbage collection. Every now and then it finds all unreachable expressions and replaces them with special "Free" value.
 
 ## References
 * [Lazy K specification](http://tromp.github.io/cl/lazy-k.html).
