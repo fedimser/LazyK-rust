@@ -126,11 +126,20 @@ fn test_make_printer() -> Result<()> {
     let mut program = LazyKProgram::make_printer(text.as_bytes());
     assert_eq!(program.run_string("")?, "Hallo Welt!\n");
 
+    // Combinator-calculus style.
     let source = program.to_string();
-    let expected_source = include_str!("../examples/hallo_welt.lazy");
+    let expected_source = include_str!("../examples/hallo_welt_1.lazy");
     assert_eq!(source, expected_source);
     let mut program2 = LazyKProgram::compile(&source)?;
     assert_eq!(program2.run_string("")?, "Hallo Welt!\n");
 
+
+    // Unlambda style.
+    let source = program.to_string_unlambda();
+    let expected_source = include_str!("../examples/hallo_welt_2.lazy");
+    assert_eq!(source, expected_source);
+    let mut program2 = LazyKProgram::compile(&source)?;
+    assert_eq!(program2.run_string("")?, "Hallo Welt!\n");
+    
     Ok(())
 }

@@ -62,16 +62,29 @@ impl LazyKProgram {
         Ok(())
     }
 
-    /// Produces source code for this program (in SKI caclulus style).
+    /// Produces source code for this program (in combinator-caclulus style).
     ///
     /// ```
     /// use lazyk_rust::LazyKProgram;
-    /// let prog = LazyKProgram::compile("0101").unwrap();
-    /// assert_eq!(prog.to_string(), "(S(K(((S(K((IS)K)))S)K)))");
+    /// let prog = LazyKProgram::compile("```ssk``s`k``ss`s``sskk").unwrap();
+    /// assert_eq!(prog.to_string(), "SSK(S(K(SS(S(SSK))))K)");
     /// ```
     pub fn to_string(&self) -> String {
         let mut output = String::new();
-        self.runner.print_expr(self.root_id, &mut output);
+        self.runner.print_expr_cc(self.root_id, &mut output, false);
+        output
+    }
+
+    /// Produces source code for this program (in Unlambda style).
+    ///
+    /// ```
+    /// use lazyk_rust::LazyKProgram;
+    /// let prog = LazyKProgram::compile("SSK(S(K(SS(S(SSK))))K)").unwrap();
+    /// assert_eq!(prog.to_string_unlambda(), "```ssk``s`k``ss`s``sskk");
+    /// ```
+    pub fn to_string_unlambda(&self) -> String {
+        let mut output = String::new();
+        self.runner.print_expr_ul(self.root_id, &mut output);
         output
     }
 
