@@ -4,7 +4,10 @@ use crate::{
     util::{num_repr, NumRepr},
 };
 use anyhow::{bail, Result};
-use std::{collections::VecDeque, mem::size_of};
+use std::{
+    collections::VecDeque,
+    mem::{size_of, swap},
+};
 
 pub struct LazyKRunner {
     e: Vec<Expr>,
@@ -192,44 +195,34 @@ impl LazyKRunner {
         self.new_expr(Expr::A(lhs, rhs))
     }
 
-    fn drop_i1(&self, expr: ExprId) -> ExprId {
-        let mut cur = expr;
-        loop {
-            if let Expr::I1(arg1) = self.e[cur as usize] {
-                cur = arg1;
-            } else {
-                return cur;
-            }
+    fn drop_i1(&self, mut expr: ExprId) -> ExprId {
+        while let Expr::I1(arg1) = self.e[expr as usize] {
+            expr = arg1;
         }
+        expr
     }
 
     fn partial_eval(&mut self, mut cur: ExprId) -> ExprId {
         let mut prev: ExprId = 0;
         loop {
             cur = self.drop_i1(cur);
-            while let Expr::A(_, _) = self.e[cur as usize] {
-                self.swap_arg1(cur, &mut prev);
-                let next = self.drop_i1(prev);
-                prev = cur;
-                cur = next;
+            while let Expr::A(arg1, _) = &mut self.e[cur as usize] {
+                swap(arg1, &mut prev);
+                prev = self.drop_i1(prev);
+                swap(&mut cur, &mut prev);
             }
             if prev == 0 {
                 return cur;
             }
 
-            let mut next = cur;
-            cur = prev;
-            self.swap_arg1(cur, &mut next);
-            prev = next;
+            if let Expr::A(arg1, _) = &mut self.e[prev as usize] {
+                swap(arg1, &mut cur);
+            } else {
+                panic!("Unreachable code")
+            }
+            swap(&mut cur, &mut prev);
 
             self.partial_eval_primitive_application(cur);
-        }
-    }
-
-    fn swap_arg1(&mut self, app_id: ExprId, other_arg1: &mut ExprId) {
-        match &mut self.e[app_id as usize] {
-            Expr::A(arg1, _) => std::mem::swap(arg1, other_arg1),
-            _ => panic!("Unexpected expression type."),
         }
     }
 
