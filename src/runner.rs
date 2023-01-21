@@ -4,7 +4,7 @@ use crate::{
     util::{num_repr, NumRepr},
 };
 use anyhow::{bail, Result};
-use std::collections::VecDeque;
+use std::{collections::VecDeque, mem::size_of};
 
 pub struct LazyKRunner {
     e: Vec<Expr>,
@@ -24,9 +24,9 @@ pub struct LazyKRunner {
     gc_queue: VecDeque<ExprId>,
 }
 
-// Garbade collection is triggered if number of expressions in the pool exceeds
-// this number.
-static GC_LIMIT: usize = 1000000;
+// Garbade collector will try to keep memory usage below this number.
+static GC_LIMIT_BYTES: usize = 256 * 1024 * 1024;
+static GC_LIMIT_EXPR: usize = GC_LIMIT_BYTES / size_of::<Expr>();
 // Number of expressions at the beginning that are never garbage-collected.
 static PREAMBLE_LENGTH: usize = 448;
 // This Church number is used to mark end of input/output.
@@ -34,7 +34,7 @@ static EOF_MARKER: u16 = 256;
 
 impl LazyKRunner {
     pub fn new() -> Self {
-        let mut pool: Vec<Expr> = Vec::with_capacity(GC_LIMIT);
+        let mut pool: Vec<Expr> = Vec::with_capacity(1000000);
         pool.push(Expr::Free);
         let mut n = |expr: Expr| {
             pool.push(expr);
@@ -108,11 +108,12 @@ impl LazyKRunner {
 
     // Frees all expressions not reachable from expr_id.
     fn garbage_collect(&mut self, expr_id: ExprId) {
-        if self.gc_free_ptr != 0 || self.e.len() < GC_LIMIT {
+        let fp = self.gc_free_ptr;
+        let n = self.e.len();
+        let need_gc = (fp == 0 && n > GC_LIMIT_EXPR) || (fp > GC_LIMIT_EXPR);
+        if !need_gc {
             return;
         }
-
-        let n = self.e.len();
 
         // BFS.
         let mut needed: Vec<bool> = vec![false; n];
