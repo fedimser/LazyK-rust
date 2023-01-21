@@ -1,5 +1,5 @@
 use anyhow::Result;
-use byteorder::{WriteBytesExt, ReadBytesExt};
+use byteorder::{ReadBytesExt, WriteBytesExt};
 use std::io::{BufRead, ErrorKind, Write};
 
 pub enum Input {

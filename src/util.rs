@@ -32,7 +32,7 @@ fn num_repr_no_high_powers(x: u16) -> NumRepr {
     let sqrt = (x as f32).sqrt().floor() as u16;
     for d in (2..=sqrt).rev() {
         if x % d == 0 {
-            return NumRepr::Mul(d as usize, (x/d) as usize);
+            return NumRepr::Mul(d as usize, (x / d) as usize);
         }
     }
     NumRepr::Inc((x - 1) as usize)

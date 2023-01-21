@@ -8,17 +8,17 @@ impl Parser {
         let mut e = pool.i;
         let mut i = 0;
         while i != source.len() {
-            if source[i] == ('0' as u8) {
+            if source[i] == b'0' {
                 let lhs = pool.partial_apply(e, pool.s);
                 e = pool.partial_apply(lhs, pool.k);
-            } else if source[i] == ('1' as u8) {
+            } else if source[i] == b'1' {
                 let rhs = pool.partial_apply(pool.k, e);
                 e = pool.partial_apply(pool.s, rhs);
             }
             i += 1;
         }
         *source = &source[i..];
-        return e;
+        e
     }
 
     fn skip_whitespace_and_comments(source: &mut &[u8]) {
@@ -43,11 +43,7 @@ impl Parser {
         *source = &source[source.len()..];
     }
 
-    fn parse_expr(
-        source: &mut &[u8],
-        i_is_iota: bool,
-        pool: &mut LazyKRunner,
-    ) -> Result<ExprId> {
+    fn parse_expr(source: &mut &[u8], i_is_iota: bool, pool: &mut LazyKRunner) -> Result<ExprId> {
         Self::skip_whitespace_and_comments(source);
         if source.is_empty() {
             bail!("Unexpected end of source.")
@@ -88,7 +84,7 @@ impl Parser {
         let mut e: Option<ExprId> = None;
         loop {
             Self::skip_whitespace_and_comments(source);
-            if source.is_empty() || source[0] == (')' as u8) {
+            if source.is_empty() || source[0] == b')' {
                 break;
             }
             let e2 = Self::parse_expr(source, false, pool)?;

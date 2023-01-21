@@ -1,7 +1,12 @@
 use anyhow::Result;
 use std::io::{stdin, stdout, Cursor};
 
-use crate::{runner::LazyKRunner, expression::{ExprId, Expr}, parser::Parser, io::{Input, Output}};
+use crate::{
+    expression::{Expr, ExprId},
+    io::{Input, Output},
+    parser::Parser,
+    runner::LazyKRunner,
+};
 
 pub struct LazyKProgram {
     runner: LazyKRunner,
@@ -50,7 +55,7 @@ impl LazyKProgram {
     /// Runs program as String -> String function.
     pub fn run_string(&mut self, input: &str) -> Result<String> {
         let result = self.run_vec(input.as_bytes().to_owned())?;
-        Ok(String::from_utf8(result).map_err(anyhow::Error::from)?)
+        String::from_utf8(result).map_err(anyhow::Error::from)
     }
 
     /// Runs program, reading from standard input and writing to standard output.
@@ -67,9 +72,9 @@ impl LazyKProgram {
     /// ```
     /// use lazyk_rust::LazyKProgram;
     /// let prog = LazyKProgram::compile("```ssk``s`k``ss`s``sskk").unwrap();
-    /// assert_eq!(prog.to_string(), "SSK(S(K(SS(S(SSK))))K)");
+    /// assert_eq!(prog.to_source(), "SSK(S(K(SS(S(SSK))))K)");
     /// ```
-    pub fn to_string(&self) -> String {
+    pub fn to_source(&self) -> String {
         let mut output = String::new();
         self.runner.print_expr_cc(self.root_id, &mut output, false);
         output
@@ -80,9 +85,9 @@ impl LazyKProgram {
     /// ```
     /// use lazyk_rust::LazyKProgram;
     /// let prog = LazyKProgram::compile("SSK(S(K(SS(S(SSK))))K)").unwrap();
-    /// assert_eq!(prog.to_string_unlambda(), "```ssk``s`k``ss`s``sskk");
+    /// assert_eq!(prog.to_source_unlambda(), "```ssk``s`k``ss`s``sskk");
     /// ```
-    pub fn to_string_unlambda(&self) -> String {
+    pub fn to_source_unlambda(&self) -> String {
         let mut output = String::new();
         self.runner.print_expr_ul(self.root_id, &mut output);
         output

@@ -38,7 +38,7 @@ impl LazyKRunner {
         pool.push(Expr::Free);
         let mut n = |expr: Expr| {
             pool.push(expr);
-            return (pool.len() - 1) as ExprId;
+            (pool.len() - 1) as ExprId
         };
 
         let k = n(Expr::K);
@@ -92,13 +92,10 @@ impl LazyKRunner {
         }
         // Try use next free slot.
         for i in self.gc_free_ptr..self.e.len() {
-            match self.e[i] {
-                Expr::Free => {
-                    self.e[i] = expr;
-                    self.gc_free_ptr = i + 1;
-                    return i as ExprId;
-                }
-                _ => {}
+            if let Expr::Free = self.e[i] {
+                self.e[i] = expr;
+                self.gc_free_ptr = i + 1;
+                return i as ExprId;
             }
         }
         // Reached end of allocated pool, push.
@@ -132,6 +129,7 @@ impl LazyKRunner {
                 _ => {}
             }
         }
+        #[allow(clippy::needless_range_loop)]
         for i in PREAMBLE_LENGTH..n {
             if !needed[i] {
                 self.e[i] = Expr::Free;
@@ -182,7 +180,7 @@ impl LazyKRunner {
         let new_lazy_read = self.new_expr(Expr::LazyRead);
         let y = self.new_expr(Expr::K1(new_lazy_read));
         self.e[lhs as usize] = Expr::S2(x, y);
-        return self.partial_eval_primitive_application_2(lhs, rhs); // "fall through".
+        self.partial_eval_primitive_application_2(lhs, rhs)
     }
 
     fn apply_s2(&mut self, arg1: ExprId, arg2: ExprId, rhs: ExprId) -> Expr {
@@ -246,11 +244,11 @@ impl LazyKRunner {
     }
 
     fn car(&mut self, list: ExprId) -> ExprId {
-        return self.partial_apply(list, self.k);
+        self.partial_apply(list, self.k)
     }
 
     fn cdr(&mut self, list: ExprId) -> ExprId {
-        return self.partial_apply(list, self.ki);
+        self.partial_apply(list, self.ki)
     }
 
     // pair(X,Y)F := (FX)Y
@@ -259,7 +257,7 @@ impl LazyKRunner {
         let d = self.new_expr(Expr::K1(x));
         let a = self.new_expr(Expr::S2(self.i, d));
         let b = self.new_expr(Expr::K1(y));
-        return self.new_expr(Expr::S2(a, b));
+        self.new_expr(Expr::S2(a, b))
     }
 
     pub fn church_char(&self, mut idx: u16) -> ExprId {
