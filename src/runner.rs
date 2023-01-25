@@ -287,78 +287,8 @@ impl LazyKRunner {
         }
     }
 
-    /// Prints expression in combinator-calculus style.
-    pub(crate) fn print_expr_cc(&self, expr_id: ExprId, output: &mut String, need_paren: bool) {
-        match self.e[expr_id as usize] {
-            Expr::S => output.push('S'),
-            Expr::K => output.push('K'),
-            Expr::I => output.push('I'),
-            ref expr => {
-                if need_paren {
-                    output.push('(');
-                }
-                match *expr {
-                    Expr::A(arg1, arg2) => {
-                        self.print_expr_cc(arg1, output, false);
-                        self.print_expr_cc(arg2, output, true);
-                    }
-                    Expr::K1(arg) => {
-                        output.push('K');
-                        self.print_expr_cc(arg, output, true);
-                    }
-
-                    Expr::S1(arg) => {
-                        output.push('S');
-                        self.print_expr_cc(arg, output, true);
-                    }
-                    Expr::S2(arg1, arg2) => {
-                        output.push('S');
-                        self.print_expr_cc(arg1, output, true);
-                        self.print_expr_cc(arg2, output, true);
-                    }
-                    Expr::I1(arg) => {
-                        output.push('I');
-                        self.print_expr_cc(arg, output, true);
-                    }
-                    _ => panic!("Encountered unprintable expression type."),
-                }
-                if need_paren {
-                    output.push(')');
-                }
-            }
-        }
-    }
-
-    /// Prints expression in Unlambda style.
-    pub(crate) fn print_expr_ul(&self, expr_id: ExprId, output: &mut String) {
-        match self.e[expr_id as usize] {
-            Expr::A(arg1, arg2) => {
-                output.push('`');
-                self.print_expr_ul(arg1, output);
-                self.print_expr_ul(arg2, output);
-            }
-            Expr::K => output.push('k'),
-            Expr::K1(arg) => {
-                output.push_str("`k");
-                self.print_expr_ul(arg, output);
-            }
-            Expr::S => output.push('s'),
-            Expr::S1(arg) => {
-                output.push_str("`s");
-                self.print_expr_ul(arg, output);
-            }
-            Expr::S2(arg1, arg2) => {
-                output.push_str("``s");
-                self.print_expr_ul(arg1, output);
-                self.print_expr_ul(arg2, output);
-            }
-            Expr::I => output.push('i'),
-            Expr::I1(arg) => {
-                output.push_str("`i");
-                self.print_expr_ul(arg, output);
-            }
-            _ => panic!("Encountered unprintable expression type."),
-        }
+    pub(crate) fn get_expr(&'_ self, expr_id: ExprId) -> &'_ Expr {
+        &self.e[expr_id as usize]
     }
 }
 

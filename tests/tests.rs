@@ -1,5 +1,5 @@
 use anyhow::Result;
-use lazyk_rust::{LazyKProgram, LazyKRunner};
+use lazyk_rust::{LazyKProgram, LazyKRunner, Style};
 use std::ops::Deref;
 
 #[test]
@@ -16,6 +16,18 @@ fn test_identity() -> Result<()> {
     let mut program = LazyKProgram::compile(source).unwrap();
     assert_eq!(program.run_string("").unwrap(), "");
     assert_eq!(program.run_string("abcd")?, "abcd");
+    Ok(())
+}
+
+#[test]
+fn test_double_cdr() -> Result<()> {
+    let source = "S(SI(K(KI)))(K(KI))"; // Discards first 2 bytes.
+    let mut program = LazyKProgram::compile(source).unwrap();
+    assert_eq!(program.run_string("Hello")?, "llo");
+    assert_eq!(program.run_string("Hoi")?, "i");
+    assert_eq!(program.run_string("Hi")?, "");
+    assert_eq!(program.run_string("a")?, "");
+    assert_eq!(program.run_string("")?, "");
     Ok(())
 }
 
@@ -122,23 +134,51 @@ fn test_runtime_errors() -> Result<()> {
 
 #[test]
 fn test_make_printer() -> Result<()> {
+    let mut program = LazyKProgram::make_printer("abc".as_bytes());
+    assert_eq!(program.run_string("")?, "abc");
+    Ok(())
+}
+
+#[test]
+fn test_to_source() -> Result<()> {
     let text = "Hallo Welt!\n";
-    let mut program = LazyKProgram::make_printer(text.as_bytes());
-    assert_eq!(program.run_string("")?, "Hallo Welt!\n");
+    let program = LazyKProgram::make_printer(text.as_bytes());
 
     // Combinator-calculus style.
-    let source = program.to_source();
+    let source = program.to_source(Style::CombCalculus);
     let expected_source = include_str!("../examples/hallo_welt_1.lazy");
     assert_eq!(source, expected_source);
     let mut program2 = LazyKProgram::compile(&source)?;
-    assert_eq!(program2.run_string("")?, "Hallo Welt!\n");
+    assert_eq!(program2.run_string("")?, text);
 
     // Unlambda style.
-    let source = program.to_source_unlambda();
+    let source = program.to_source(Style::Unlambda);
     let expected_source = include_str!("../examples/hallo_welt_2.lazy");
     assert_eq!(source, expected_source);
     let mut program2 = LazyKProgram::compile(&source)?;
-    assert_eq!(program2.run_string("")?, "Hallo Welt!\n");
+    assert_eq!(program2.run_string("")?, text);
 
+    // Jot style.
+    let source = program.to_source(Style::Jot);
+    let expected_source = include_str!("../examples/hallo_welt_3.lazy");
+    assert_eq!(source, expected_source);
+    let mut program2 = LazyKProgram::compile(&source)?;
+    assert_eq!(program2.run_string("")?, text);
+
+    // Iota style.
+    let source = program.to_source(Style::Iota);
+    let expected_source = include_str!("../examples/hallo_welt_4.lazy");
+    assert_eq!(source, expected_source);
+    let mut program2 = LazyKProgram::compile(&source)?;
+    assert_eq!(program2.run_string("")?, text);
+
+    Ok(())
+}
+
+#[test]
+fn test_parses_mixed_style() -> Result<()> {
+    let source = "SII``sii";
+    let program = LazyKProgram::compile(source)?;
+    assert_eq!(program.to_source(Style::CombCalculus), "SII(SII)");
     Ok(())
 }
